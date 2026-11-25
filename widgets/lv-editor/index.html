@@ -17,168 +17,94 @@
 <body>
 <div class="app" id="app">
 
-  <!-- ===== Kopfleiste ===== -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">LV</div>
-      <div class="crumbs">
-        <select id="projectSelect" class="crumb-select" title="Projekt"></select>
-        <span class="crumb-sep">›</span>
-        <select id="lvSelect" class="crumb-select" title="Leistungsverzeichnis"></select>
-        <span id="lvStatus" class="pill" hidden></span>
-        <button type="button" class="btn btn-ghost btn-sm" id="newLvButton" title="Neues Projekt oder LV anlegen">+ LV</button>
+  <!-- ===== Icon-Leiste ===== -->
+  <nav class="rail">
+    <div class="logo">LV</div>
+    <button type="button" class="ri on" data-view="edit" title="Liste bearbeiten">
+      <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h9"/></svg></button>
+    <button type="button" class="ri" data-view="document" title="Dokumentansicht">
+      <svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z M12 2.5v3h3 M7.5 9h5M7.5 12h5M7.5 15h3"/></svg></button>
+    <div class="menu-wrap">
+      <button type="button" class="ri" id="printMenuButton" title="Drucken / Export">
+        <svg viewBox="0 0 20 20"><path d="M6 7V2.5h8V7 M6 14H3.5V7h13v7H14 M6 11.5h8v6H6z"/></svg></button>
+      <div class="menu" id="printMenu" hidden>
+        <button type="button" data-print="ausschreibung"><b>Ausschreibung</b><small>ohne Preise, mit Bieterfeldern</small></button>
+        <button type="button" data-print="kostenanschlag"><b>Kostenanschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
+        <button type="button" data-print="kurz"><b>Kurz-LV</b><small>nur Kurztexte, mit Preisen</small></button>
+        <hr>
+        <button type="button" id="exportTypstButton"><b>Typst-Datei</b><small>für eigenes Layout</small></button>
       </div>
     </div>
+    <span class="rail-sp"></span>
+    <button type="button" class="ri" id="refreshButton" title="Neu laden">
+      <svg viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-1.8-4.3 M16 3v3.5h-3.5"/></svg></button>
+    <button type="button" class="ri" id="settingsButton" title="Einstellungen">
+      <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8"/></svg></button>
+  </nav>
 
-    <div class="topbar-right">
-      <div class="totals" id="lvTotals">
-        <span class="totals-label">LV netto</span>
-        <span class="totals-value" id="lvNet">0,00 €</span>
+  <!-- ===== Mitte ===== -->
+  <section class="mid">
+    <header class="bar">
+      <div class="ctx">
+        <select id="lvSelect" class="sel-lv" title="Leistungsverzeichnis"></select>
+        <span class="sep">·</span>
+        <select id="projectSelect" class="sel-pr" title="Projekt"></select>
+        <span id="lvStatus" class="status" hidden></span>
+        <button type="button" class="link" id="newLvButton" title="Neues Projekt oder LV anlegen">+ LV</button>
       </div>
+      <label class="cmd">
+        <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>
+        <input type="search" id="search" placeholder="Suchen: OZ, Kurztext, Langtext …" autocomplete="off">
+        <kbd>⌘K</kbd>
+      </label>
       <span id="saveStatus" class="save-status">Bereit</span>
-      <button type="button" class="icon-btn" id="refreshButton" title="Neu laden">⟳</button>
-      <div class="menu-wrap">
-        <button type="button" class="btn btn-primary" id="printMenuButton">Drucken ▾</button>
-        <div class="menu" id="printMenu" hidden>
-          <button type="button" data-print="ausschreibung"><b>Ausschreibung</b><small>ohne Preise, mit Bieterfeldern</small></button>
-          <button type="button" data-print="kostenanschlag"><b>Kostenanschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
-          <button type="button" data-print="kurz"><b>Kurz-LV</b><small>nur Kurztexte, mit Preisen</small></button>
-          <hr>
-          <button type="button" id="exportTypstButton"><b>Typst-Datei</b><small>für eigenes Layout</small></button>
-        </div>
-      </div>
-      <button type="button" class="icon-btn" id="settingsButton" title="Einstellungen">⚙</button>
+      <button type="button" class="btn btn-primary" id="addPositionButton">+ Position</button>
+    </header>
+
+    <div id="schemaBanner" class="banner" hidden>
+      <div><b id="schemaBannerTitle">Datenmodell erweitern</b> <span id="schemaBannerText"></span></div>
+      <button type="button" class="btn btn-primary" id="schemaButton">Jetzt anlegen</button>
     </div>
-  </header>
 
-  <div id="schemaBanner" class="banner" hidden>
-    <div>
-      <b id="schemaBannerTitle">Datenmodell erweitern</b>
-      <span id="schemaBannerText"></span>
+    <div class="scroll">
+      <div class="list" id="list"></div>
+      <div class="paper" id="documentView" hidden></div>
     </div>
-    <button type="button" class="btn btn-primary" id="schemaButton">Jetzt anlegen</button>
-  </div>
-  <div id="globalMessage" class="toast" hidden></div>
+  </section>
 
-  <div class="workspace">
+  <!-- ===== Inspector ===== -->
+  <aside class="inspector" id="inspector">
+    <div class="ins-body">
+      <form id="posPanel" autocomplete="off" hidden>
+        <div class="ins-h"><span>Position</span><button type="button" class="x" id="closeInspector" title="Schließen (Esc)">✕</button></div>
+        <div class="ins-oz" id="inspectorOz">–</div>
+        <div class="muted ins-path" id="inspectorPath"></div>
 
-    <!-- ===== Gliederung ===== -->
-    <aside class="tree-panel">
-      <div class="panel-head">
-        <h2>Gliederung</h2>
-        <span class="muted" id="treeCount"></span>
-      </div>
-      <input type="search" id="treeSearch" class="search" placeholder="Suchen (OZ, Text) …">
-      <div class="tree" id="tree"></div>
-      <div class="tree-actions">
-        <button type="button" class="btn btn-ghost" id="addTitleButton">+ Titel</button>
-        <button type="button" class="btn btn-ghost" id="addSubtitleButton" disabled>+ Untertitel</button>
-      </div>
-    </aside>
-
-    <!-- ===== Hauptbereich ===== -->
-    <main class="main">
-      <div class="main-head">
-        <div class="segmented" role="tablist">
-          <button type="button" class="seg active" data-view="edit">Bearbeiten</button>
-          <button type="button" class="seg" data-view="document">Dokument</button>
-        </div>
-        <div class="node-head" id="nodeHead"></div>
-      </div>
-
-      <section class="card" id="editView">
-        <div class="card-head">
-          <div>
-            <h2 id="nodeTitle">Positionen</h2>
-            <div class="muted" id="nodeSubtitle">Bitte links einen Titel wählen</div>
-          </div>
-          <div class="row-actions">
-            <button type="button" class="btn btn-ghost" id="renameNodeButton" disabled>Titel bearbeiten</button>
-            <button type="button" class="btn btn-primary" id="addPositionButton" disabled>+ Position</button>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="pos-table">
-            <thead>
-              <tr>
-                <th class="c-oz">OZ</th>
-                <th>Kurztext</th>
-                <th class="c-num">Menge</th>
-                <th class="c-unit">ME</th>
-                <th class="c-num">EP €</th>
-                <th class="c-num">GB €</th>
-                <th class="c-act"></th>
-              </tr>
-            </thead>
-            <tbody id="positionRows"></tbody>
-            <tfoot id="positionFoot"></tfoot>
-          </table>
-        </div>
-      </section>
-
-      <section class="card paper" id="documentView" hidden></section>
-    </main>
-
-    <!-- ===== Inspector ===== -->
-    <aside class="inspector" id="inspector" hidden>
-      <div class="panel-head">
-        <div>
-          <div class="eyebrow">Position</div>
-          <h2 id="inspectorOz">–</h2>
-        </div>
-        <button type="button" class="icon-btn" id="closeInspector" title="Schließen">✕</button>
-      </div>
-
-      <form id="positionForm" autocomplete="off">
-        <label class="field">
-          <span>Kurztext</span>
-          <input type="text" id="fKurztext" placeholder="Kurzbeschreibung der Leistung">
-        </label>
-        <label class="field">
-          <span>Langtext</span>
-          <textarea id="fLangtext" rows="8" placeholder="Ausführliche Leistungsbeschreibung"></textarea>
-        </label>
-
+        <label class="f"><span>Kurztext</span>
+          <input type="text" id="fKurztext" class="big" placeholder="Kurzbeschreibung der Leistung"></label>
+        <label class="f"><span>Langtext</span>
+          <textarea id="fLangtext" rows="4" placeholder="Ausführliche Leistungsbeschreibung"></textarea></label>
         <div class="grid-2">
-          <label class="field">
-            <span>Menge</span>
-            <input type="text" inputmode="decimal" id="fMenge" class="num">
-          </label>
-          <label class="field">
-            <span>Einheit</span>
-            <input type="text" id="fEinheit" list="unitList">
-            <datalist id="unitList"></datalist>
-          </label>
-          <label class="field">
-            <span>EP (Kostenansatz) €</span>
-            <input type="text" inputmode="decimal" id="fEinheitspreis" class="num">
-          </label>
-          <div class="field">
-            <span>GB €</span>
-            <output id="fGesamt" class="readonly num">0,00</output>
-          </div>
+          <label class="f"><span>Menge</span><input type="text" inputmode="decimal" id="fMenge" class="num"></label>
+          <label class="f"><span>Einheit</span><input type="text" id="fEinheit" list="unitList"><datalist id="unitList"></datalist></label>
+          <label class="f"><span>Einheitspreis €</span><input type="text" inputmode="decimal" id="fEinheitspreis" class="num"></label>
+          <div class="f"><span>Gesamtbetrag</span><output id="fGesamt" class="out">0,00 €</output></div>
         </div>
-
-        <label class="field">
-          <span>Positionsart</span>
-          <select id="fPositionstyp"></select>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="fAktiv">
-          <span>Position aktiv (sonst ausgeblendet im Druck)</span>
-        </label>
-
-        <div class="inspector-foot">
+        <div class="f"><span>Positionsart</span><div class="seg" id="typeSeg"></div></div>
+        <label class="switch"><input type="checkbox" id="fAktiv"><span>Aktiv (inaktive Positionen fehlen im Druck)</span></label>
+        <div class="ins-foot">
           <span class="muted" id="dirtyIndicator"></span>
-          <div class="row-actions">
-            <button type="button" class="btn btn-ghost" id="duplicateButton">Duplizieren</button>
-            <button type="button" class="btn btn-danger" id="deleteButton">Löschen</button>
-          </div>
+          <span class="spacer"></span>
+          <button type="button" class="link" id="duplicateButton">Duplizieren</button>
+          <button type="button" class="link danger" id="deleteButton">Löschen</button>
         </div>
       </form>
-    </aside>
-  </div>
+      <div id="summaryPanel"></div>
+    </div>
+    <div class="ins-total"><span>LV netto</span><b id="lvNet">0,00 €</b></div>
+  </aside>
 </div>
+<div id="globalMessage" class="toast" hidden></div>
 
 <!-- ===== Dialog: Titel ===== -->
 <dialog id="titleDialog" class="dialog">
