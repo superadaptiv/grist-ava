@@ -22,6 +22,8 @@
     <div class="logo">LV</div>
     <button type="button" class="ri on" data-view="edit" title="Liste bearbeiten">
       <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h9"/></svg></button>
+    <button type="button" class="ri" data-view="texts" title="Texte (Vor- und Nachbemerkungen)">
+      <svg viewBox="0 0 20 20"><path d="M4 4h12M10 4v12M7.5 16h5"/></svg></button>
     <button type="button" class="ri" data-view="document" title="Dokumentansicht">
       <svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z M12 2.5v3h3 M7.5 9h5M7.5 12h5M7.5 15h3"/></svg></button>
     <div class="menu-wrap">
@@ -70,6 +72,24 @@
       <div class="list" id="list"></div>
       <div class="paper" id="documentView" hidden></div>
     </div>
+
+    <div class="texts" id="textsView" hidden>
+      <div class="slots" id="textSlots"></div>
+      <div class="ted" id="textEditor">
+        <div class="crumb" id="txCrumb"></div>
+        <div class="edh">
+          <h1 id="txTitle">Vorbemerkung</h1>
+          <label class="tg"><span>Im LV anzeigen</span><input type="checkbox" id="txOn" class="sw"></label>
+        </div>
+        <div class="seg seg-inline" id="txPart">
+          <button type="button" data-part="Vorbemerkung">Vorbemerkung</button>
+          <button type="button" data-part="Nachbemerkung">Nachbemerkung</button>
+        </div>
+        <textarea id="txText" spellcheck="true"></textarea>
+        <div class="tfoot"><span id="txStatus"></span><span id="txCount"></span></div>
+        <p class="muted" id="txHint"></p>
+      </div>
+    </div>
   </section>
 
   <!-- ===== Inspector ===== -->
@@ -100,6 +120,7 @@
         </div>
       </form>
       <div id="summaryPanel"></div>
+      <div id="textPreview" hidden></div>
     </div>
     <div class="ins-total"><span>LV netto</span><b id="lvNet">0,00 €</b></div>
   </aside>
@@ -111,7 +132,7 @@
   <form method="dialog" id="titleForm">
     <h2 id="titleDialogHeading">Titel</h2>
     <label class="field"><span>Bezeichnung</span><input type="text" id="tBezeichnung" required></label>
-    <label class="field"><span>Vorbemerkung (optional)</span><textarea id="tVorbemerkung" rows="4"></textarea></label>
+    <p class="muted">Vor- und Nachbemerkungen zu diesem Titel trägst du im Reiter „Texte“ ein (Symbol T in der linken Leiste).</p>
     <div class="dialog-foot">
       <button type="button" class="btn btn-danger" id="tDelete">Löschen</button>
       <span class="spacer"></span>
@@ -148,6 +169,32 @@
       <span class="spacer"></span>
       <button type="button" class="btn btn-ghost" id="qCancel">Abbrechen</button>
       <button type="submit" class="btn btn-primary">Anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: LV-Angaben ===== -->
+<dialog id="lvDialog" class="dialog dialog-wide">
+  <form method="dialog" id="lvForm">
+    <h2>LV-Angaben</h2>
+    <div class="grid-3">
+      <label class="field"><span>LV-Nummer</span><input type="text" id="lv_LV_Nummer"></label>
+      <label class="field"><span>Gewerk</span><input type="text" id="lv_Gewerk"></label>
+      <label class="field"><span>Bearbeitungsstand</span><select id="lv_Bearbeitungsstand"></select></label>
+    </div>
+    <label class="field"><span>LV-Bezeichnung</span><input type="text" id="lv_LV_Bezeichnung"></label>
+    <div class="dialog-sec">Deckblatt</div>
+    <div class="grid-2">
+      <label class="field"><span>Vergabeverfahren</span><input type="text" id="lv_Vergabeverfahren"></label>
+      <label class="field"><span>Angebotsabgabe (Datum, Uhrzeit)</span><input type="text" id="lv_Angebotsfrist"></label>
+      <label class="field"><span>Submission</span><input type="text" id="lv_Submission"></label>
+      <label class="field"><span>Zuschlagsfrist</span><input type="text" id="lv_Zuschlagsfrist"></label>
+    </div>
+    <label class="field"><span>Ort der Angebotsabgabe</span><textarea id="lv_Ort_Angebotsabgabe" rows="3"></textarea></label>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="lvCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
     </div>
   </form>
 </dialog>
