@@ -1,10 +1,10 @@
 // ======================================================
-// GRIST LV-EDITOR  ·  Version 2.0
+// GRIST LV-EDITOR  ·  Version 2.1 (Layout „Kompakt“)
 // Teil des AVA-Systems (Ausschreibung · Vergabe · Abrechnung)
 // ======================================================
 "use strict";
 
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 
 const T = {
   projects: "Projekte",
@@ -92,7 +92,7 @@ let settings = { ...DEFAULT_SETTINGS };
 let choices = { ...DEFAULT_CHOICES };
 let missingSchema = [];
 let missingTables = [];
-let expanded = new Set();
+let collapsed = new Set();
 let view = "edit";
 let searchTerm = "";
 let editingTitleId = null;
@@ -386,7 +386,7 @@ function validateSelection() {
   if (!lvsOfProject.some(l => l.id === sel.lvId)) {
     const stored = refId(localStorage.getItem("lv.lv"));
     sel.lvId = lvsOfProject.some(l => l.id === stored) ? stored : (lvsOfProject[0]?.id ?? null);
-    expanded = new Set(lvTitles().map(t => t.id));
+    collapsed = new Set();
   }
   if (sel.nodeId && !lvTitles().some(t => t.id === sel.nodeId)) sel.nodeId = null;
   if (!sel.nodeId) {
@@ -397,13 +397,12 @@ function validateSelection() {
 }
 
 // ------------------------------------------------------
-// RENDERING
+// RENDERING  (Layout „Kompakt“: Icon-Leiste · Liste · Inspector)
 // ------------------------------------------------------
 function renderAll() {
   renderHeader();
   renderSchemaBanner();
-  renderTree();
-  renderNode();
+  renderList();
   renderInspector();
   if (view === "document") renderDocument();
 }
@@ -414,26 +413,24 @@ function renderHeader() {
   [...db.projects]
     .filter(p => p.Projektname || p.Projektnummer)
     .sort((a, b) => String(a.Projektnummer).localeCompare(String(b.Projektnummer), "de", { numeric: true }))
-    .forEach(p => ps.add(new Option(`${p.Projektnummer ? p.Projektnummer + " · " : ""}${p.Projektname || ""}`, p.id)));
+    .forEach(p => ps.add(new Option(`${p.Projektnummer ? p.Projektnummer + " " : ""}${p.Projektname || ""}`, p.id)));
   ps.value = sel.projectId ?? "";
 
   const ls = $("lvSelect");
   const list = db.lvs.filter(l => refId(l.Projekt) === sel.projectId)
     .sort((a, b) => String(lvNr(a)).localeCompare(String(lvNr(b)), "de", { numeric: true }));
   ls.innerHTML = list.length ? "" : '<option value="">Kein LV</option>';
-  list.forEach(l => ls.add(new Option(`${lvNr(l) ? "LV " + lvNr(l) + " · " : ""}${lvName(l) || "Ohne Bezeichnung"}`, l.id)));
+  list.forEach(l => ls.add(new Option(`LV ${lvNr(l) ? lvNr(l) + " " : ""}${lvName(l) || "Ohne Bezeichnung"}`, l.id)));
   ls.value = sel.lvId ?? "";
 
   const st = lvState(lv());
-  const pill = $("lvStatus");
-  pill.hidden = !st;
-  pill.textContent = st + (isLocked() ? " · OZ fix" : "");
-  pill.className = "pill st-" + String(st).toLowerCase().replace("ü", "ue");
-  pill.title = isLocked() ? "Ab diesem Status werden Ordnungszahlen nicht mehr automatisch geändert." : "";
+  const el = $("lvStatus");
+  el.hidden = !st;
+  el.innerHTML = `<i class="dot st-${String(st).toLowerCase().replace("ü", "ue")}"></i>${esc(st)}${isLocked() ? " · OZ fix" : ""}`;
+  el.title = isLocked() ? "Ab diesem Status werden Ordnungszahlen nicht mehr automatisch geändert." : "";
 
   $("lvNet").textContent = fmtMoney(lvTotal()) + " €";
-  $("addTitleButton").disabled = !sel.lvId;
-  $("addSubtitleButton").disabled = !sel.nodeId || level(title(sel.nodeId)) >= 3;
+  $("addPositionButton").disabled = !sel.lvId || !walk().length;
 }
 
 function renderSchemaBanner() {
@@ -460,132 +457,137 @@ function matchesSearch(text) {
   return !searchTerm || String(text).toLowerCase().includes(searchTerm);
 }
 
-function renderTree() {
-  const el = $("tree");
-  if (!sel.lvId) {
-    el.innerHTML = '<div class="tree-empty">Bitte ein Leistungsverzeichnis wählen.</div>';
-    $("treeCount").textContent = "";
-    return;
-  }
-  const nodes = walk();
-  const posCount = nodes.reduce((s, t) => s + positionsOf(t.id).length, 0);
-  $("treeCount").textContent = `${nodes.length} Titel · ${posCount} Pos.`;
-  if (!nodes.length) {
-    el.innerHTML = '<div class="tree-empty">Noch keine Titel.<br>Mit „+ Titel“ beginnen.</div>';
-    return;
-  }
-
-  const html = [];
-  const draw = (parentId, depth) => {
-    const sibs = childrenOf(parentId);
-    sibs.forEach((t, i) => {
-      const kids = childrenOf(t.id);
-      const pos = positionsOf(t.id);
-      const subtreeHit = searchTerm && subtreeMatches(t);
-      if (searchTerm && !subtreeHit) return;
-      const open = searchTerm ? true : expanded.has(t.id);
-      const hasContent = kids.length || pos.length;
-      html.push(`
-        <div class="tree-node t-level-${depth} ${t.id === sel.nodeId && !sel.posId ? "active" : ""}"
-             style="padding-left:${(depth - 1) * 14}px" data-node="${t.id}">
-          <button class="t-toggle" data-toggle="${t.id}" ${hasContent ? "" : "disabled"}>${hasContent ? (open ? "▼" : "▶") : ""}</button>
-          <button class="t-main" data-select-node="${t.id}">
-            <span class="t-oz">${esc(nodeOz(t))}</span>
-            <span class="t-name">${esc(nodeName(t))}</span>
-          </button>
-          <span class="t-sum">${fmtMoney(nodeTotal(t.id))}</span>
-          <span class="t-moves">
-            <button data-move-node="${t.id}" data-dir="-1" ${i === 0 ? "disabled" : ""} title="Nach oben">▲</button>
-            <button data-move-node="${t.id}" data-dir="1" ${i === sibs.length - 1 ? "disabled" : ""} title="Nach unten">▼</button>
-            <button data-edit-node="${t.id}" title="Bearbeiten">✎</button>
-          </span>
-        </div>`);
-      if (!open) return;
-      pos.forEach(p => {
-        if (searchTerm && !matchesSearch(`${p.Positionsnummer} ${p.Kurztext} ${p.Langtext}`)) return;
-        html.push(`
-          <div class="tree-node t-pos ${p.id === sel.posId ? "active" : ""} ${isActive(p.Aktiv) ? "" : "inactive"}"
-               style="padding-left:${depth * 14 + 6}px">
-            <button class="t-main" data-select-pos="${p.id}">
-              <span class="t-oz">${esc(String(p.Positionsnummer || "").split(".").pop())}</span>
-              <span class="t-name">${esc(p.Kurztext || "(ohne Kurztext)")}</span>
-            </button>
-          </div>`);
-      });
-      draw(t.id, depth + 1);
-    });
-  };
-  draw(null, 1);
-  el.innerHTML = html.join("") || '<div class="tree-empty">Keine Treffer.</div>';
-}
-
 function subtreeMatches(t) {
   if (matchesSearch(`${nodeOz(t)} ${nodeName(t)}`)) return true;
   if (positionsOf(t.id).some(p => matchesSearch(`${p.Positionsnummer} ${p.Kurztext} ${p.Langtext}`))) return true;
   return childrenOf(t.id).some(subtreeMatches);
 }
 
-function renderNode() {
-  const node = title(sel.nodeId);
-  $("addPositionButton").disabled = !node;
-  $("renameNodeButton").disabled = !node;
-  const body = $("positionRows");
-  const foot = $("positionFoot");
-
-  if (!node) {
-    $("nodeTitle").textContent = "Positionen";
-    $("nodeSubtitle").textContent = sel.lvId ? "Bitte links einen Titel wählen" : "Bitte ein LV wählen";
-    $("nodeHead").textContent = "";
-    body.innerHTML = '<tr class="empty-row"><td colspan="7">Kein Titel ausgewählt.</td></tr>';
-    foot.innerHTML = "";
+function renderList() {
+  const el = $("list");
+  if (!sel.lvId) {
+    el.innerHTML = `<div class="empty"><b>Kein Leistungsverzeichnis gewählt</b><span>Oben ein LV wählen oder mit „+ LV“ ein neues anlegen.</span></div>`;
     return;
   }
-
-  $("nodeTitle").innerHTML = `<span class="t-oz">${esc(nodeOz(node))}</span>&nbsp; ${esc(nodeName(node))}`;
-  const kids = childrenOf(node.id);
-  const pos = positionsOf(node.id);
-  $("nodeSubtitle").textContent =
-    `${pos.length} ${pos.length === 1 ? "Position" : "Positionen"}` + (kids.length ? ` · ${kids.length} Untertitel` : "") +
-    (node.Vorbemerkung ? " · mit Vorbemerkung" : "");
-  $("nodeHead").textContent = ancestors(node).slice(0, -1).map(a => `${nodeOz(a)} ${nodeName(a)}`).join("  ›  ");
-
-  if (!pos.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="7">
-      ${kids.length ? "Dieser Titel enthält Untertitel. Positionen stehen dort." : "Noch keine Positionen. Mit „+ Position“ anlegen."}
-    </td></tr>`;
-  } else {
-    body.innerHTML = pos.map((p, i) => {
-      const k = typeKey(p);
-      const active = isActive(p.Aktiv);
-      const gb = k === "normal" ? fmtMoney(lineTotal(p)) : '<span class="nur-ep">Nur EP</span>';
-      return `
-        <tr class="${p.id === sel.posId ? "selected" : ""} ${active ? "" : "inactive"}" data-pos="${p.id}">
-          <td class="c-oz">${esc(p.Positionsnummer)}</td>
-          <td>
-            <div class="p-short">${esc(p.Kurztext || "(ohne Kurztext)")}${k !== "normal" ? `<span class="badge b-${k}">${TYPE_LABEL[k]}</span>` : ""}${active ? "" : '<span class="badge b-inaktiv">inaktiv</span>'}</div>
-            ${p.Langtext ? `<div class="p-long">${esc(p.Langtext)}</div>` : ""}
-          </td>
-          <td class="c-num">${fmtQty(p.Menge)}</td>
-          <td class="c-unit">${esc(p.Einheit)}</td>
-          <td class="c-num">${fmtMoney(p.Einheitspreis)}</td>
-          <td class="c-num">${gb}</td>
-          <td class="c-act"><div class="row-moves">
-            <button data-move-pos="${p.id}" data-dir="-1" ${i === 0 ? "disabled" : ""} title="Nach oben">↑</button>
-            <button data-move-pos="${p.id}" data-dir="1" ${i === pos.length - 1 ? "disabled" : ""} title="Nach unten">↓</button>
-          </div></td>
-        </tr>`;
-    }).join("");
+  const total = lvTotal() || 1;
+  const html = [];
+  const draw = parentId => {
+    const sibs = childrenOf(parentId);
+    sibs.forEach((t, i) => {
+      if (searchTerm && !subtreeMatches(t)) return;
+      const lvl = Math.min(level(t), 3);
+      const pos = positionsOf(t.id);
+      const kids = childrenOf(t.id);
+      const open = searchTerm ? true : !collapsed.has(t.id);
+      const sum = nodeTotal(t.id);
+      const count = pos.length + kids.length;
+      html.push(`
+        <div class="g lvl-${lvl} ${t.id === sel.nodeId && !sel.posId ? "on" : ""}" data-node="${t.id}">
+          <button class="caret" data-toggle="${t.id}" title="${open ? "Zuklappen" : "Aufklappen"}">${open ? "▾" : "▸"}</button>
+          <span class="oz">${esc(nodeOz(t))}</span>
+          <span class="n">${esc(nodeName(t))}</span>
+          <span class="c">${pos.length ? pos.length + " Pos." : kids.length ? kids.length + " Untertitel" : "leer"}</span>
+          ${lvl === 1 ? `<span class="share" title="${Math.round(sum / total * 100)} % des LV"><i style="width:${Math.max(2, Math.round(sum / total * 100))}%"></i></span>` : ""}
+          <span class="acts">
+            <button data-move-node="${t.id}" data-dir="-1" ${i === 0 ? "disabled" : ""} title="Nach oben">↑</button>
+            <button data-move-node="${t.id}" data-dir="1" ${i === sibs.length - 1 ? "disabled" : ""} title="Nach unten">↓</button>
+            <button data-edit-node="${t.id}" title="Titel bearbeiten">✎</button>
+            ${lvl < 3 ? `<button data-add-sub="${t.id}" title="Untertitel anlegen">+ UT</button>` : ""}
+            ${kids.length ? "" : `<button data-add-pos="${t.id}" title="Position anlegen">+ Pos</button>`}
+          </span>
+          <span class="s">${fmtMoney(sum)}</span>
+        </div>`);
+      if (!open) return;
+      if (t.Vorbemerkung) html.push(`<div class="pre lvl-${lvl}">${esc(t.Vorbemerkung)}</div>`);
+      pos.forEach((p, j) => {
+        if (searchTerm && !matchesSearch(`${p.Positionsnummer} ${p.Kurztext} ${p.Langtext}`) && !matchesSearch(`${nodeOz(t)} ${nodeName(t)}`)) return;
+        const k = typeKey(p);
+        const active = isActive(p.Aktiv);
+        html.push(`
+          <div class="row ${p.id === sel.posId ? "on" : ""} ${active ? "" : "off"}" data-pos="${p.id}">
+            <span class="oz">${esc(p.Positionsnummer)}</span>
+            <span class="kt">${esc(p.Kurztext || "(ohne Kurztext)")}${k !== "normal" ? `<span class="tag t-${k}">${TYPE_LABEL[k]}</span>` : ""}${active ? "" : '<span class="tag t-off">inaktiv</span>'}<small>${esc(String(p.Langtext || "").split("\n")[0])}</small></span>
+            <span class="r">${fmtQty(p.Menge)}</span>
+            <span class="me">${esc(p.Einheit)}</span>
+            <span class="r">${fmtMoney(p.Einheitspreis)}</span>
+            <span class="r gb">${k === "normal" ? fmtMoney(lineTotal(p)) : '<em>nur EP</em>'}</span>
+            <span class="mv">
+              <button data-move-pos="${p.id}" data-dir="-1" ${j === 0 ? "disabled" : ""} title="Nach oben">↑</button>
+              <button data-move-pos="${p.id}" data-dir="1" ${j === pos.length - 1 ? "disabled" : ""} title="Nach unten">↓</button>
+            </span>
+          </div>`);
+      });
+      if (!kids.length && !searchTerm && (!pos.length || t.id === sel.nodeId)) {
+        html.push(`<button class="row add lvl-${lvl}" data-add-pos="${t.id}">+ Position in ${esc(nodeOz(t))}</button>`);
+      }
+      draw(t.id);
+    });
+  };
+  draw(null);
+  if (!walk().length) {
+    html.push(`<div class="empty"><b>Noch keine Titel</b><span>Ein LV besteht aus Titeln (01, 02 …) und darin Positionen.</span></div>`);
+  } else if (searchTerm && !html.length) {
+    html.push(`<div class="empty"><b>Keine Treffer</b><span>für „${esc(searchTerm)}“</span></div>`);
   }
-  foot.innerHTML = `<tr><td></td><td>Summe ${esc(nodeOz(node))} ${esc(nodeName(node))}</td>
-    <td colspan="4" class="c-num">${fmtMoney(nodeTotal(node.id))} €</td><td></td></tr>`;
+  if (!searchTerm) html.push(`<button class="add-title" id="addTitleInline">+ Titel hinzufügen</button>`);
+  el.innerHTML = html.join("");
 }
 
 function renderInspector() {
   const p = position(sel.posId);
-  $("inspector").hidden = !p || view !== "edit";
-  document.querySelector(".workspace").classList.toggle("with-inspector", !!p && view === "edit");
-  if (!p) return;
-  $("inspectorOz").textContent = p.Positionsnummer || "–";
+  $("posPanel").hidden = !p;
+  $("summaryPanel").hidden = !!p;
+  if (p) {
+    $("inspectorOz").textContent = p.Positionsnummer || "–";
+    const t = title(refId(p.Titel));
+    $("inspectorPath").textContent = t ? ancestors(t).map(a => `${nodeOz(a)} ${nodeName(a)}`).join(" › ") : "";
+  } else {
+    renderSummary();
+  }
+}
+
+function renderSummary() {
+  const el = $("summaryPanel");
+  const l = lv();
+  if (!l) {
+    el.innerHTML = `<div class="ins-h"><span>Übersicht</span></div><p class="muted">Kein LV gewählt.</p>`;
+    return;
+  }
+  const node = title(sel.nodeId);
+  const net = lvTotal(), vat = round2(net * settings.mwst / 100);
+  const total = net || 1;
+  const nodeBlock = node ? `
+    <div class="ins-h"><span>Titel</span></div>
+    <div class="ins-oz">${esc(nodeOz(node))}</div>
+    <div class="ins-title">${esc(nodeName(node))}</div>
+    ${node.Vorbemerkung ? `<div class="ins-pre">${esc(node.Vorbemerkung)}</div>` : ""}
+    <div class="kv"><span>Summe</span><b>${fmtMoney(nodeTotal(node.id))} €</b></div>
+    <div class="ins-actions">
+      <button class="btn btn-ghost" data-edit-node="${node.id}">Bearbeiten</button>
+      ${level(node) < 3 ? `<button class="btn btn-ghost" data-add-sub="${node.id}">+ Untertitel</button>` : ""}
+      ${childrenOf(node.id).length ? "" : `<button class="btn btn-ghost" data-add-pos="${node.id}">+ Position</button>`}
+    </div>
+    <hr>` : "";
+  el.innerHTML = `
+    ${nodeBlock}
+    <div class="ins-h"><span>Leistungsverzeichnis</span></div>
+    <div class="ins-title">${esc(lvNr(l))} ${esc(lvName(l))}</div>
+    <div class="muted">${esc(project()?.Projektname || "")}${l.Gewerk ? " · " + esc(l.Gewerk) : ""}</div>
+    <div class="bars">
+      ${childrenOf(null).map(t => `
+        <button class="bar" data-select-node="${t.id}">
+          <span class="bl"><span class="oz">${esc(nodeOz(t))}</span> ${esc(nodeName(t))}</span>
+          <span class="bv">${fmtMoney(nodeTotal(t.id))}</span>
+          <span class="bt"><i style="width:${Math.max(1, Math.round(nodeTotal(t.id) / total * 100))}%"></i></span>
+        </button>`).join("") || '<p class="muted">Noch keine Titel.</p>'}
+    </div>
+    <div class="kv"><span>zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.</span><span>${fmtMoney(vat)} €</span></div>
+    <div class="kv"><span>Brutto</span><span>${fmtMoney(net + vat)} €</span></div>
+    <div class="hint">
+      <div><kbd>⌘K</kbd> Suchen</div>
+      <div><kbd>⌘↵</kbd> Neue Position</div>
+      <div><kbd>Esc</kbd> Schließen</div>
+    </div>`;
 }
 
 function fillForm(p) {
@@ -595,14 +597,21 @@ function fillForm(p) {
   $("fEinheit").value = p.Einheit ?? "";
   $("fEinheitspreis").value = fmtInput(p.Einheitspreis, 2);
   $("fAktiv").checked = isActive(p.Aktiv);
-  const sel2 = $("fPositionstyp");
-  sel2.innerHTML = "";
-  choices.Positionstyp.forEach(c => sel2.add(new Option(c, c)));
-  sel2.value = p.Positionstyp || "Normal";
-  if (!sel2.value) sel2.value = choices.Positionstyp[0];
+  const seg = $("typeSeg");
+  const current = p.Positionstyp || choices.Positionstyp[0] || "Normal";
+  seg.innerHTML = choices.Positionstyp.map(c =>
+    `<button type="button" data-type="${esc(c)}" class="${c === current ? "on" : ""}">${esc(c.replace(/position$/i, ""))}</button>`
+  ).join("");
+  seg.dataset.value = current;
   $("unitList").innerHTML = choices.Einheit.map(u => `<option value="${esc(u)}">`).join("");
   updateFormTotal();
   $("dirtyIndicator").textContent = "";
+  autoGrow($("fLangtext"));
+}
+
+function autoGrow(ta) {
+  ta.style.height = "auto";
+  ta.style.height = Math.min(320, Math.max(90, ta.scrollHeight + 2)) + "px";
 }
 
 function formValues() {
@@ -612,7 +621,7 @@ function formValues() {
     Menge: parseDe($("fMenge").value),
     Einheit: $("fEinheit").value.trim(),
     Einheitspreis: parseDe($("fEinheitspreis").value),
-    Positionstyp: $("fPositionstyp").value,
+    Positionstyp: $("typeSeg").dataset.value || "Normal",
     Aktiv: $("fAktiv").checked
   };
 }
@@ -620,8 +629,8 @@ function formValues() {
 function updateFormTotal() {
   const v = formValues();
   $("fGesamt").textContent = typeKey(v) === "normal"
-    ? fmtMoney(round2(v.Menge * v.Einheitspreis))
-    : "Nur Einheitspreis";
+    ? fmtMoney(round2(v.Menge * v.Einheitspreis)) + " €"
+    : "nur Einheitspreis";
 }
 
 // ------------------------------------------------------
@@ -631,8 +640,10 @@ async function selectNode(id) {
   await flushSave();
   sel.nodeId = id;
   sel.posId = null;
-  expanded.add(id);
+  collapsed.delete(id);
+  if (view !== "edit") setView("edit");
   renderAll();
+  document.querySelector(`.g[data-node="${id}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
 async function selectPosition(id) {
@@ -641,12 +652,11 @@ async function selectPosition(id) {
   if (!p) return;
   sel.posId = id;
   sel.nodeId = refId(p.Titel);
-  ancestors(title(sel.nodeId)).forEach(a => expanded.add(a.id));
+  ancestors(title(sel.nodeId)).forEach(a => collapsed.delete(a.id));
   if (view !== "edit") setView("edit");
   renderAll();
   fillForm(p);
-  const row = document.querySelector(`tr[data-pos="${id}"]`);
-  row?.scrollIntoView({ block: "nearest" });
+  document.querySelector(`.row[data-pos="${id}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
 async function closeInspector() {
@@ -657,10 +667,10 @@ async function closeInspector() {
 
 function setView(v) {
   view = v;
-  document.querySelectorAll(".seg").forEach(b => b.classList.toggle("active", b.dataset.view === v));
-  $("editView").hidden = v !== "edit";
+  document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  $("list").hidden = v !== "edit";
   $("documentView").hidden = v !== "document";
-  renderInspector();
+  document.querySelector(".scroll").scrollTop = 0;
   if (v === "document") renderDocument();
 }
 
@@ -689,8 +699,7 @@ async function flushSave() {
       await apply([["UpdateRecord", T.positions, id, values]]);
       $("dirtyIndicator").textContent = "Automatisch gespeichert";
       renderHeader();
-      renderTree();
-      renderNode();
+      renderList();
       renderInspector();
     } catch (e) {
       dirty = true;
@@ -704,10 +713,22 @@ async function flushSave() {
 // ------------------------------------------------------
 // POSITIONEN: ANLEGEN / DUPLIZIEREN / LÖSCHEN / VERSCHIEBEN
 // ------------------------------------------------------
-async function insertPosition(fields = {}) {
+// Ziel: angegebener Titel, sonst der gewählte, sonst der letzte Titel ohne Untertitel
+function targetNode(nodeId) {
+  let node = title(nodeId ?? sel.nodeId);
+  if (node && childrenOf(node.id).length) node = walk(node.id).filter(t => !childrenOf(t.id).length).pop();
+  if (!node) node = walk().filter(t => !childrenOf(t.id).length).pop();
+  return node;
+}
+
+async function insertPosition(fields = {}, nodeId = null) {
   await flushSave();
-  const node = title(sel.nodeId);
-  if (!node) return;
+  const node = targetNode(nodeId);
+  if (!node) {
+    toast("Bitte zuerst einen Titel anlegen.");
+    return;
+  }
+  sel.nodeId = node.id;
   const list = positionsOf(node.id);
   const cur = position(sel.posId);
   const idx = cur && refId(cur.Titel) === node.id ? list.findIndex(p => p.id === cur.id) : list.length - 1;
@@ -824,7 +845,7 @@ async function saveTitleDialog(ev) {
   const res = await apply([["AddRecord", T.titles, null, fields]]);
   await apply(renumberActions());
   const id = newRowId(res);
-  if (editingTitleParent) expanded.add(editingTitleParent);
+  if (editingTitleParent) collapsed.delete(editingTitleParent);
   if (id) await selectNode(id); else renderAll();
 }
 
@@ -1333,16 +1354,19 @@ function bindEvents() {
     sel.lvId = refId(e.target.value);
     localStorage.setItem("lv.lv", sel.lvId);
     sel.nodeId = sel.posId = null;
-    expanded = new Set(lvTitles().map(t => t.id));
+    collapsed = new Set();
     validateSelection();
     renderAll();
   });
+  $("newLvButton").addEventListener("click", () => openQuickStart());
 
+  // Icon-Leiste
+  document.querySelectorAll(".rail [data-view]").forEach(b => b.addEventListener("click", async () => {
+    await flushSave();
+    setView(b.dataset.view);
+  }));
   $("refreshButton").addEventListener("click", () => refresh());
   $("settingsButton").addEventListener("click", openSettings);
-  $("settingsForm").addEventListener("submit", saveSettings);
-  $("sCancel").addEventListener("click", () => $("settingsDialog").close());
-
   $("printMenuButton").addEventListener("click", e => {
     e.stopPropagation();
     $("printMenu").hidden = !$("printMenu").hidden;
@@ -1352,81 +1376,104 @@ function bindEvents() {
     $("printMenu").hidden = true;
     if (b) printLV(b.dataset.print);
   });
-  $("exportTypstButton").addEventListener("click", exportTypst);
+  $("exportTypstButton").addEventListener("click", () => { $("printMenu").hidden = true; exportTypst(); });
   document.addEventListener("click", e => {
     if (!e.target.closest(".menu-wrap")) $("printMenu").hidden = true;
   });
 
+  // Dialoge
+  $("settingsForm").addEventListener("submit", saveSettings);
+  $("sCancel").addEventListener("click", () => $("settingsDialog").close());
+  $("titleForm").addEventListener("submit", saveTitleDialog);
+  $("tCancel").addEventListener("click", () => $("titleDialog").close());
+  $("tDelete").addEventListener("click", deleteTitle);
   $("schemaButton").addEventListener("click", migrateSchema);
   $("quickStartForm").addEventListener("submit", saveQuickStart);
   $("qCancel").addEventListener("click", () => $("quickStartDialog").close());
   $("qNewProject").addEventListener("change", e => { $("qProjectFields").hidden = !e.target.checked; });
-  $("newLvButton").addEventListener("click", () => openQuickStart());
 
-  $("treeSearch").addEventListener("input", e => {
+  // Suche
+  $("search").addEventListener("input", e => {
     searchTerm = e.target.value.trim().toLowerCase();
-    renderTree();
+    if (view !== "edit") setView("edit");
+    renderList();
   });
-  $("tree").addEventListener("click", e => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    if (b.dataset.toggle) {
-      const id = Number(b.dataset.toggle);
-      expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-      renderTree();
-    } else if (b.dataset.selectNode) selectNode(Number(b.dataset.selectNode));
-    else if (b.dataset.selectPos) selectPosition(Number(b.dataset.selectPos));
-    else if (b.dataset.moveNode) moveTitle(Number(b.dataset.moveNode), Number(b.dataset.dir));
-    else if (b.dataset.editNode) openTitleDialog(Number(b.dataset.editNode));
-  });
-  $("tree").addEventListener("dblclick", e => {
-    const b = e.target.closest("[data-select-node]");
-    if (b) openTitleDialog(Number(b.dataset.selectNode));
+  $("search").addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      const first = document.querySelector("#list .row[data-pos]");
+      if (first) selectPosition(Number(first.dataset.pos));
+    } else if (e.key === "Escape") {
+      e.target.value = "";
+      searchTerm = "";
+      renderList();
+      e.target.blur();
+    }
   });
 
-  $("addTitleButton").addEventListener("click", () => openTitleDialog(null, null));
-  $("addSubtitleButton").addEventListener("click", () => openTitleDialog(null, sel.nodeId));
-  $("renameNodeButton").addEventListener("click", () => openTitleDialog(sel.nodeId));
-  $("titleForm").addEventListener("submit", saveTitleDialog);
-  $("tCancel").addEventListener("click", () => $("titleDialog").close());
-  $("tDelete").addEventListener("click", deleteTitle);
+  $("addPositionButton").addEventListener("click", () => insertPosition());
 
-  document.querySelectorAll(".seg").forEach(b => b.addEventListener("click", async () => {
-    await flushSave();
-    setView(b.dataset.view);
-  }));
+  // Klicks in Liste und Übersicht (gemeinsame Aktionen)
+  const onAction = e => {
+    const b = e.target.closest("[data-toggle],[data-move-node],[data-edit-node],[data-add-sub],[data-add-pos],[data-move-pos],[data-select-node],#addTitleInline");
+    if (b) {
+      e.stopPropagation();
+      const d = b.dataset;
+      if (b.id === "addTitleInline") openTitleDialog(null, null);
+      else if (d.toggle) {
+        const id = Number(d.toggle);
+        collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+        renderList();
+      }
+      else if (d.moveNode) moveTitle(Number(d.moveNode), Number(d.dir));
+      else if (d.editNode) openTitleDialog(Number(d.editNode));
+      else if (d.addSub) openTitleDialog(null, Number(d.addSub));
+      else if (d.addPos) insertPosition({}, Number(d.addPos));
+      else if (d.movePos) movePosition(Number(d.movePos), Number(d.dir));
+      else if (d.selectNode) selectNode(Number(d.selectNode));
+      return;
+    }
+    const row = e.target.closest(".row[data-pos]");
+    if (row) return selectPosition(Number(row.dataset.pos));
+    const g = e.target.closest(".g[data-node]");
+    if (g) selectNode(Number(g.dataset.node));
+  };
+  $("list").addEventListener("click", onAction);
+  $("summaryPanel").addEventListener("click", onAction);
+  $("list").addEventListener("dblclick", e => {
+    const g = e.target.closest(".g[data-node]");
+    if (g && !e.target.closest("button")) openTitleDialog(Number(g.dataset.node));
+  });
   $("documentView").addEventListener("click", e => {
     const p = e.target.closest("[data-doc-pos]");
     if (p) selectPosition(Number(p.dataset.docPos));
   });
 
-  $("addPositionButton").addEventListener("click", () => insertPosition());
-  $("positionRows").addEventListener("click", e => {
-    const mv = e.target.closest("[data-move-pos]");
-    if (mv) {
-      e.stopPropagation();
-      movePosition(Number(mv.dataset.movePos), Number(mv.dataset.dir));
-      return;
-    }
-    const tr = e.target.closest("tr[data-pos]");
-    if (tr) selectPosition(Number(tr.dataset.pos));
-  });
-
-  ["fKurztext", "fLangtext", "fMenge", "fEinheit", "fEinheitspreis", "fPositionstyp", "fAktiv"].forEach(id => {
+  // Inspector
+  ["fKurztext", "fLangtext", "fMenge", "fEinheit", "fEinheitspreis", "fAktiv"].forEach(id => {
     $(id).addEventListener("input", onFormInput);
     $(id).addEventListener("change", onFormInput);
   });
-  $("positionForm").addEventListener("submit", e => { e.preventDefault(); flushSave(); });
+  $("fLangtext").addEventListener("input", e => autoGrow(e.target));
+  $("typeSeg").addEventListener("click", e => {
+    const b = e.target.closest("[data-type]");
+    if (!b) return;
+    $("typeSeg").dataset.value = b.dataset.type;
+    $("typeSeg").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    onFormInput();
+  });
+  $("posPanel").addEventListener("submit", e => { e.preventDefault(); flushSave(); });
   $("closeInspector").addEventListener("click", closeInspector);
   $("duplicateButton").addEventListener("click", duplicatePosition);
   $("deleteButton").addEventListener("click", deletePosition);
 
-  // Tastatur: Strg/Cmd+S speichern, Strg/Cmd+Enter neue Position, Esc schließen
+  // Tastatur
   document.addEventListener("keydown", e => {
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); flushSave(); }
+    const k = e.key.toLowerCase();
+    if (mod && k === "k") { e.preventDefault(); $("search").focus(); $("search").select(); }
+    else if (mod && k === "s") { e.preventDefault(); flushSave(); }
     else if (mod && e.key === "Enter") { e.preventDefault(); insertPosition(); }
-    else if (e.key === "Escape" && !document.querySelector("dialog[open]") && sel.posId) closeInspector();
+    else if (e.key === "Escape" && !document.querySelector("dialog[open]") && document.activeElement !== $("search") && sel.posId) closeInspector();
   });
 
   // Daten von außen geändert (andere Ansicht, andere Nutzer)
