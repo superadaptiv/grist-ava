@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.1.0";
+const VERSION = "2.2.0";
 
 const T = {
   projects: "Projekte",
@@ -35,7 +35,10 @@ const FULL_SCHEMA = [
     { id: "Bearbeitungsstand", type: "Choice", widgetOptions: ch(["Entwurf", "Prüfung", "Ausschreibung", "Beauftragt"]) },
     { id: "Ausgabe_Datum", type: "Date", label: "Ausgabedatum" },
     { id: "Abgabedatum", type: "Date" },
-    { id: "Vorbemerkung", type: "Text" },
+    { id: "Vorbemerkung", type: "Text", label: "Vorbemerkung (Vortext)" },
+    { id: "Nachbemerkung", type: "Text", label: "Nachbemerkung (Nachtext)" },
+    { id: "Vorbemerkung_ausblenden", type: "Bool", label: "Vorbemerkung ausblenden" },
+    { id: "Nachbemerkung_ausblenden", type: "Bool", label: "Nachbemerkung ausblenden" },
     { id: "Vergabeverfahren", type: "Text" },
     { id: "Angebotsfrist", type: "Text" },
     { id: "Submission", type: "Text" },
@@ -48,7 +51,10 @@ const FULL_SCHEMA = [
     { id: "Leistungsverzeichnis", type: "Ref:Leistungsverzeichnisse", show: "LV_Bezeichnung" },
     { id: "Uebergeordnet", type: "Ref:Titel", label: "Übergeordnet", show: "Titelbezeichnung" },
     { id: "Sortierung", type: "Numeric" },
-    { id: "Vorbemerkung", type: "Text" }
+    { id: "Vorbemerkung", type: "Text", label: "Vorbemerkung (Vortext)" },
+    { id: "Nachbemerkung", type: "Text", label: "Nachbemerkung (Nachtext)" },
+    { id: "Vorbemerkung_ausblenden", type: "Bool", label: "Vorbemerkung ausblenden" },
+    { id: "Nachbemerkung_ausblenden", type: "Bool", label: "Nachbemerkung ausblenden" }
   ]},
   { table: T.positions, cols: [
     { id: "Titel", type: "Ref:Titel", show: "Titelbezeichnung" },
@@ -355,7 +361,7 @@ function lockedOz(node, before, after) {
 // ------------------------------------------------------
 async function refresh({ quiet = false } = {}) {
   if (busy) return;
-  if (dirty || savingPromise) return; // Eingaben nicht überschreiben
+  if (dirty || savingPromise || txDirty || txSaving) return; // Eingaben nicht überschreiben
   busy = true;
   try {
     if (!quiet) status("Laden …");
@@ -397,6 +403,210 @@ function validateSelection() {
 }
 
 // ------------------------------------------------------
+// TEXTE: Vor- und Nachbemerkungen (Reiter „Texte“)
+// ------------------------------------------------------
+const TEXT_PARTS = ["Vorbemerkung", "Nachbemerkung"];
+const textOf = (row, part) => String((row && row[part]) || "");
+const textOn = (row, part) => !!textOf(row, part).trim() && !isActive(row?.[part + "_ausblenden"]);
+let textSel = { kind: "lv", id: null, part: "Vorbemerkung" };
+let txDirty = false;
+let txTimer = null;
+let txSaving = null;
+
+function textRow(sel2 = textSel) {
+  return sel2.kind === "lv" ? lv() : title(sel2.id);
+}
+
+function textState(row, part) {
+  if (!textOf(row, part).trim()) return "empty";
+  return isActive(row?.[part + "_ausblenden"]) ? "off" : "full";
+}
+
+function textSlots() {
+  const l = lv();
+  if (!l) return [];
+  const out = TEXT_PARTS.map(part => ({ kind: "lv", id: l.id, part, row: l }));
+  for (const t of walk()) TEXT_PARTS.forEach(part => out.push({ kind: "node", id: t.id, part, row: t }));
+  return out;
+}
+
+function renderTexts() {
+  const el = $("textSlots");
+  const l = lv();
+  if (!l) {
+    el.innerHTML = '<div class="empty"><b>Kein LV gewählt</b></div>';
+    $("textEditor").hidden = true;
+    return;
+  }
+  $("textEditor").hidden = false;
+  if (textSel.kind === "node" && !title(textSel.id)) textSel = { kind: "lv", id: l.id, part: "Vorbemerkung" };
+  textSel.id = textSel.kind === "lv" ? l.id : textSel.id;
+
+  const hit = (row, part, label) => !searchTerm || `${label} ${textOf(row, part)}`.toLowerCase().includes(searchTerm);
+  const slot = (kind, row, part, cls = "") => {
+    const st = textState(row, part);
+    const on = textSel.kind === kind && textSel.id === row.id && textSel.part === part;
+    const extra = st === "off" ? "aus" : st === "full" ? `${textOf(row, part).trim().split(/\n+/).length} Abs.` : "";
+    return `<button class="slot ${cls} ${on ? "on" : ""}" data-slot="${kind}:${row.id}:${part}">
+      <i class="st s-${st}"></i>${kind === "lv" ? part + "en" : part}<span class="x">${extra}</span></button>`;
+  };
+  const html = ['<div class="sh">Leistungsverzeichnis</div>'];
+  TEXT_PARTS.forEach(part => { if (hit(l, part, "LV")) html.push(slot("lv", l, part)); });
+  const nodes = walk();
+  if (nodes.length) html.push('<div class="sh">Titel</div>');
+  for (const t of nodes) {
+    const lvl = Math.min(level(t), 3);
+    const label = `${nodeOz(t)} ${nodeName(t)}`;
+    const parts = TEXT_PARTS.filter(part => hit(t, part, label));
+    if (!parts.length) continue;
+    html.push(`<div class="grp l${lvl}"><span class="oz">${esc(nodeOz(t))}</span><span>${esc(nodeName(t))}</span></div>`);
+    parts.forEach(part => html.push(slot("node", t, part, `l${lvl}`)));
+  }
+  html.push(`<div class="legend"><span><i class="st s-full"></i>an</span><span><i class="st s-off"></i>ausgeschaltet</span><span><i class="st s-empty"></i>leer</span></div>`);
+  el.innerHTML = html.join("");
+}
+
+function fillTextEditor() {
+  const row = textRow();
+  if (!row) return;
+  const { kind, part } = textSel;
+  const l = lv();
+  $("txCrumb").innerHTML = kind === "lv"
+    ? `Leistungsverzeichnis <span class="oz">${esc(lvNr(l))}</span> ${esc(lvName(l))}`
+    : `Titel <span class="oz">${esc(nodeOz(row))}</span> ${esc(nodeName(row))}`;
+  $("txTitle").textContent = kind === "lv" ? part + "en" : part;
+  $("txPart").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.part === part));
+  const ta = $("txText");
+  ta.value = textOf(row, part);
+  ta.disabled = !(part in row);
+  ta.placeholder = !(part in row)
+    ? "Für dieses Feld fehlt noch eine Spalte. Bitte oben im gelben Hinweis „Jetzt anlegen“ klicken."
+    : kind === "lv"
+      ? (part === "Vorbemerkung"
+        ? "Übergreifende Rahmenbedingungen für das ganze LV: Baustellenbedingungen, Zufahrt, Lagerflächen, Arbeitszeiten, Normen, Abrechnung, Nebenleistungen …"
+        : "Schlussbestimmungen, z. B. Hinweise zur Angebotsabgabe, Bestätigung der Ortsbesichtigung …")
+      : (part === "Vorbemerkung"
+        ? "Gilt für alle Positionen dieses Titels, z. B. Ausführungsbedingungen, Materialvorgaben, Abrechnungsregeln …"
+        : "Ergänzungen am Ende dieses Titels, z. B. Abrechnungshinweise …");
+  const flag = part + "_ausblenden";
+  $("txOn").checked = !isActive(row[flag]);
+  $("txOn").disabled = !(flag in row);
+  $("txHint").textContent = kind === "lv"
+    ? (part === "Vorbemerkung" ? "Steht im Druck nach dem Inhaltsverzeichnis, vor dem ersten Titel."
+      : "Steht im Druck nach der Preiszusammenfassung (LV-Summe brutto).")
+    : (part === "Vorbemerkung" ? "Steht im Druck direkt unter der Titelüberschrift."
+      : "Steht im Druck am Ende des Titels, vor der Titelsumme.");
+  $("txStatus").textContent = "";
+  updateTextCount();
+}
+
+function updateTextCount() {
+  const n = $("txText").value.length;
+  $("txCount").textContent = `${n.toLocaleString("de-DE")} Zeichen`;
+}
+
+function renderTextPreview() {
+  const el = $("textPreview");
+  const row = textRow();
+  const l = lv();
+  if (!row || !l) { el.innerHTML = ""; return; }
+  const { kind, part } = textSel;
+  const live = kind === textSel.kind ? $("txText")?.value ?? textOf(row, part) : textOf(row, part);
+  const state = !live.trim() ? "empty" : isActive(row[part + "_ausblenden"]) ? "off" : "full";
+  const cut = s => s.length > 420 ? s.slice(0, 420) + " …" : s;
+  const block = `<div class="pv-text ${state}"><i>${kind === "lv" ? part + "en" : part}</i>${
+    state === "empty" ? "(leer)" : br(cut(live))}${state === "off" ? '<em>ausgeschaltet, erscheint nicht im Druck</em>' : ""}</div>`;
+  const posLines = list => list.slice(0, 2).map(p => `<div class="pv-pos"><span>${esc(p.Positionsnummer)}</span><span><b>${esc(p.Kurztext)}</b><div class="ln"></div><div class="ln s"></div></span></div>`).join("");
+  let body = "";
+  if (kind === "lv" && part === "Vorbemerkung") {
+    const first = childrenOf(null)[0];
+    body = `<div class="pv-h big"><span></span><span>Vorbemerkungen</span></div>${block}
+      ${first ? `<div class="pv-h big"><span>${esc(nodeOz(first))}</span><span>${esc(nodeName(first))}</span></div><div class="ln"></div><div class="ln s"></div>` : ""}`;
+  } else if (kind === "lv") {
+    const net = lvTotal(), vat = round2(net * settings.mwst / 100);
+    body = `<div class="pv-h big"><span></span><span>Zusammenstellung</span></div>
+      ${childrenOf(null).map(t => `<div class="pv-kv"><span>${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span>${fmtMoney(nodeTotal(t.id))}</span></div>`).join("")}
+      <div class="pv-kv b"><span>LV-Summe (netto)</span><span>${fmtMoney(net)} €</span></div>
+      <div class="pv-kv b"><span>LV-Summe (brutto)</span><span>${fmtMoney(net + vat)} €</span></div>
+      <div class="pv-h"><span></span><span>Nachbemerkungen</span></div>${block}`;
+  } else if (part === "Vorbemerkung") {
+    const kid = childrenOf(row.id)[0];
+    body = `<div class="pv-h big"><span>${esc(nodeOz(row))}</span><span>${esc(nodeName(row))}</span></div>${block}
+      ${kid ? `<div class="pv-h"><span>${esc(nodeOz(kid))}</span><span>${esc(nodeName(kid))}</span></div>${posLines(positionsOf(kid.id))}` : posLines(positionsOf(row.id))}`;
+  } else {
+    const leaf = [row, ...walk(row.id)].filter(t => positionsOf(t.id).length).pop() || row;
+    body = `<div class="pv-dots">…</div>${posLines(positionsOf(leaf.id).slice(-2))}${block}
+      <div class="pv-sum"><span>Summe ${esc(nodeOz(row))} ${esc(nodeName(row))}</span><span>${fmtMoney(nodeTotal(row.id))}</span></div>`;
+  }
+  const counts2 = { full: 0, off: 0, empty: 0 };
+  textSlots().forEach(s => counts2[textState(s.row, s.part)]++);
+  el.innerHTML = `
+    <div class="ins-h"><span>Vorschau im Druck</span></div>
+    <div class="pv">${body}</div>
+    <p class="muted" style="margin:12px 0 4px">Ausgeschaltete Texte bleiben gespeichert, erscheinen aber nicht im Druck und nicht in der Dokumentansicht.</p>
+    <div class="kv"><span>Texte aktiv</span><b>${counts2.full}</b></div>
+    <div class="kv"><span>ausgeschaltet</span><b>${counts2.off}</b></div>
+    <div class="kv"><span>leer</span><b>${counts2.empty}</b></div>`;
+}
+
+async function selectText(kind, id, part) {
+  await flushText();
+  textSel = { kind, id, part };
+  renderTexts();
+  fillTextEditor();
+  renderTextPreview();
+}
+
+function onTextInput() {
+  txDirty = true;
+  $("txStatus").textContent = "Änderungen …";
+  updateTextCount();
+  renderTextPreview();
+  clearTimeout(txTimer);
+  txTimer = setTimeout(flushText, 700);
+}
+
+async function flushText() {
+  clearTimeout(txTimer);
+  if (txSaving) await txSaving;
+  if (!txDirty) return;
+  const row = textRow();
+  const { part } = textSel;
+  txDirty = false;
+  if (!row || !(part in row)) return;
+  const table = textSel.kind === "lv" ? T.lvs : T.titles;
+  const value = $("txText").value;
+  txSaving = (async () => {
+    try {
+      await apply([["UpdateRecord", table, row.id, { [part]: value }]]);
+      $("txStatus").textContent = "Automatisch gespeichert";
+      renderTexts();
+    } catch (e) {
+      txDirty = true;
+    } finally {
+      txSaving = null;
+    }
+  })();
+  return txSaving;
+}
+
+async function toggleText(on) {
+  await flushText();
+  const row = textRow();
+  const flag = textSel.part + "_ausblenden";
+  if (!row || !(flag in row)) return;
+  await apply([["UpdateRecord", textSel.kind === "lv" ? T.lvs : T.titles, row.id, { [flag]: !on }]]);
+  renderTexts();
+  renderTextPreview();
+}
+
+async function openTexts(kind, id) {
+  await flushSave();
+  textSel = { kind, id: kind === "lv" ? sel.lvId : id, part: textSel.part || "Vorbemerkung" };
+  setView("texts");
+}
+
+// ------------------------------------------------------
 // RENDERING  (Layout „Kompakt“: Icon-Leiste · Liste · Inspector)
 // ------------------------------------------------------
 function renderAll() {
@@ -405,6 +615,7 @@ function renderAll() {
   renderList();
   renderInspector();
   if (view === "document") renderDocument();
+  if (view === "texts") { renderTexts(); if (!txDirty) fillTextEditor(); renderTextPreview(); }
 }
 
 function renderHeader() {
@@ -498,13 +709,13 @@ function renderList() {
           <span class="s">${fmtMoney(sum)}</span>
         </div>`);
       if (!open) return;
-      if (t.Vorbemerkung) html.push(`<div class="pre lvl-${lvl}">${esc(t.Vorbemerkung)}</div>`);
       pos.forEach((p, j) => {
         if (searchTerm && !matchesSearch(`${p.Positionsnummer} ${p.Kurztext} ${p.Langtext}`) && !matchesSearch(`${nodeOz(t)} ${nodeName(t)}`)) return;
         const k = typeKey(p);
         const active = isActive(p.Aktiv);
         html.push(`
           <div class="row ${p.id === sel.posId ? "on" : ""} ${active ? "" : "off"}" data-pos="${p.id}">
+            <button class="adot ${active ? "on" : ""}" data-toggle-active="${p.id}" title="${active ? "Aktiv" : "Inaktiv"} (klicken zum Umschalten)"></button>
             <span class="oz">${esc(p.Positionsnummer)}</span>
             <span class="kt">${esc(p.Kurztext || "(ohne Kurztext)")}${k !== "normal" ? `<span class="tag t-${k}">${TYPE_LABEL[k]}</span>` : ""}${active ? "" : '<span class="tag t-off">inaktiv</span>'}<small>${esc(String(p.Langtext || "").split("\n")[0])}</small></span>
             <span class="r">${fmtQty(p.Menge)}</span>
@@ -534,9 +745,12 @@ function renderList() {
 }
 
 function renderInspector() {
-  const p = position(sel.posId);
+  const texts = view === "texts";
+  const p = texts ? null : position(sel.posId);
+  $("textPreview").hidden = !texts;
   $("posPanel").hidden = !p;
-  $("summaryPanel").hidden = !!p;
+  $("summaryPanel").hidden = !!p || texts;
+  if (texts) return;
   if (p) {
     $("inspectorOz").textContent = p.Positionsnummer || "–";
     const t = title(refId(p.Titel));
@@ -560,7 +774,7 @@ function renderSummary() {
     <div class="ins-h"><span>Titel</span></div>
     <div class="ins-oz">${esc(nodeOz(node))}</div>
     <div class="ins-title">${esc(nodeName(node))}</div>
-    ${node.Vorbemerkung ? `<div class="ins-pre">${esc(node.Vorbemerkung)}</div>` : ""}
+    <div class="kv"><span>Texte</span><button class="link" data-open-texts="${node.id}">${TEXT_PARTS.map(pt => `<i class="st s-${textState(node, pt)}"></i>${pt.slice(0, 4)}.`).join(" &nbsp;")}</button></div>
     <div class="kv"><span>Summe</span><b>${fmtMoney(nodeTotal(node.id))} €</b></div>
     <div class="ins-actions">
       <button class="btn btn-ghost" data-edit-node="${node.id}">Bearbeiten</button>
@@ -573,6 +787,7 @@ function renderSummary() {
     <div class="ins-h"><span>Leistungsverzeichnis</span></div>
     <div class="ins-title">${esc(lvNr(l))} ${esc(lvName(l))}</div>
     <div class="muted">${esc(project()?.Projektname || "")}${l.Gewerk ? " · " + esc(l.Gewerk) : ""}</div>
+    <div class="ins-actions"><button class="btn btn-ghost" data-edit-lv>LV-Angaben</button><button class="btn btn-ghost" data-open-texts="lv">Vor-/Nachtexte</button></div>
     <div class="bars">
       ${childrenOf(null).map(t => `
         <button class="bar" data-select-node="${t.id}">
@@ -670,6 +885,11 @@ function setView(v) {
   document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
   $("list").hidden = v !== "edit";
   $("documentView").hidden = v !== "document";
+  $("textsView").hidden = v !== "texts";
+  document.querySelector(".scroll").hidden = v === "texts";
+  $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
+  renderInspector();
+  if (v === "texts") { renderTexts(); fillTextEditor(); renderTextPreview(); }
   document.querySelector(".scroll").scrollTop = 0;
   if (v === "document") renderDocument();
 }
@@ -760,6 +980,16 @@ async function insertPosition(fields = {}, nodeId = null) {
   } else renderAll();
 }
 
+async function toggleActive(id) {
+  await flushSave();
+  const p = position(id);
+  if (!p) return;
+  const on = !isActive(p.Aktiv);
+  await apply([["UpdateRecord", T.positions, id, { Aktiv: on }]]);
+  if (sel.posId === id) $("fAktiv").checked = on;
+  renderAll();
+}
+
 async function duplicatePosition() {
   const p = position(sel.posId);
   if (!p) return;
@@ -813,7 +1043,6 @@ function openTitleDialog(id, parentId = null) {
     ? `Titel ${nodeOz(t)} bearbeiten`
     : parent ? `Neuer Untertitel in ${nodeOz(parent)} ${nodeName(parent)}` : "Neuer Titel";
   $("tBezeichnung").value = t?.Titelbezeichnung ?? "";
-  $("tVorbemerkung").value = t?.Vorbemerkung ?? "";
   $("tDelete").hidden = !t;
   $("titleDialog").showModal();
   $("tBezeichnung").focus();
@@ -822,17 +1051,17 @@ function openTitleDialog(id, parentId = null) {
 async function saveTitleDialog(ev) {
   ev.preventDefault();
   const name = $("tBezeichnung").value.trim();
-  const pre = $("tVorbemerkung").value;
+  const texts = {};
   if (!name) return;
   $("titleDialog").close();
   if (editingTitleId) {
-    await apply([["UpdateRecord", T.titles, editingTitleId, { Titelbezeichnung: name, Vorbemerkung: pre }]]);
+    await apply([["UpdateRecord", T.titles, editingTitleId, { Titelbezeichnung: name, ...texts }]]);
     renderAll();
     return;
   }
   const sibs = childrenOf(editingTitleParent);
   const fields = {
-    Titelbezeichnung: name, Vorbemerkung: pre,
+    Titelbezeichnung: name, ...texts,
     Leistungsverzeichnis: sel.lvId,
     Sortierung: sibs.length + 1,
     Titelnummer: pad(sibs.length + 1, 2)
@@ -1003,6 +1232,38 @@ async function saveQuickStart(ev) {
 }
 
 // ------------------------------------------------------
+// LV-ANGABEN (Texte, Deckblatt, Status)
+// ------------------------------------------------------
+const LV_FIELDS = ["LV_Nummer", "LV_Bezeichnung", "Gewerk", "Bearbeitungsstand",
+  "Vergabeverfahren", "Angebotsfrist", "Submission", "Zuschlagsfrist", "Ort_Angebotsabgabe"];
+
+function openLvDialog(focusId) {
+  const l = lv();
+  if (!l) return;
+  const st = $("lv_Bearbeitungsstand");
+  st.innerHTML = "";
+  ["", ...choices.Bearbeitungsstand].forEach(c => st.add(new Option(c || "–", c)));
+  for (const f of LV_FIELDS) {
+    const el = $("lv_" + f);
+    const exists = f in l;
+    el.closest(".field").hidden = !exists;
+    el.value = exists ? (l[f] ?? "") : "";
+  }
+  $("lvDialog").showModal();
+  if (focusId) $(focusId)?.focus();
+}
+
+async function saveLvDialog(ev) {
+  ev.preventDefault();
+  const l = lv();
+  $("lvDialog").close();
+  const values = {};
+  for (const f of LV_FIELDS) if (f in l) values[f] = $("lv_" + f).value;
+  await apply([["UpdateRecord", T.lvs, l.id, values]]);
+  renderAll();
+}
+
+// ------------------------------------------------------
 // EINSTELLUNGEN
 // ------------------------------------------------------
 function openSettings() {
@@ -1048,7 +1309,7 @@ function renderDocument() {
     for (const t of childrenOf(parentId)) {
       const lvl = Math.min(level(t), 3);
       out.push(`<div class="doc-h l${lvl}"><span class="oz">${esc(nodeOz(t))}</span><span>${esc(nodeName(t))}</span></div>`);
-      if (t.Vorbemerkung) out.push(`<div class="doc-pre">${esc(t.Vorbemerkung)}</div>`);
+      if (textOn(t, "Vorbemerkung")) out.push(`<div class="doc-pre"><b>Vorbemerkung</b><br>${esc(t.Vorbemerkung)}</div>`);
       for (const p of positionsOf(t.id)) {
         const k = typeKey(p);
         out.push(`<div class="doc-pos ${isActive(p.Aktiv) ? "" : "inactive"}" data-doc-pos="${p.id}">
@@ -1061,6 +1322,7 @@ function renderDocument() {
         </div>`);
       }
       draw(t.id);
+      if (textOn(t, "Nachbemerkung")) out.push(`<div class="doc-pre"><b>Nachbemerkung</b><br>${esc(t.Nachbemerkung)}</div>`);
       out.push(`<div class="doc-sum"><span></span><span>Summe ${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span class="r">${fmtMoney(nodeTotal(t.id))} €</span></div>`);
     }
   };
@@ -1078,7 +1340,7 @@ function renderDocument() {
         </div>
       </div>
     </div>
-    ${l.Vorbemerkung ? `<div class="doc-pre" style="margin-left:0">${esc(l.Vorbemerkung)}</div>` : ""}
+    ${textOn(l, "Vorbemerkung") ? `<div class="doc-pre" style="margin-left:0"><b>Vorbemerkungen</b><br>${esc(l.Vorbemerkung)}</div>` : ""}
     <div class="doc-grid"><span>OZ</span><span>Leistungsbeschreibung</span><span>Menge</span><span>ME</span><span>EP €</span><span>GB €</span></div>
     ${out.join("") || '<div class="doc-empty">Noch keine Titel.</div>'}
     <div class="doc-total">
@@ -1086,6 +1348,7 @@ function renderDocument() {
       <div><span>zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.</span><b>${fmtMoney(vat)} €</b></div>
       <div class="big"><span>LV-Summe brutto</span><span>${fmtMoney(net + vat)} €</span></div>
     </div>
+    ${textOn(l, "Nachbemerkung") ? `<div class="doc-pre" style="margin:20px 0 0"><b>Nachbemerkungen</b><br>${esc(l.Nachbemerkung)}</div>` : ""}
     <p class="muted">Inaktive Positionen sind ausgegraut. Eventual-, Bedarfs- und Alternativpositionen werden nicht in die Summe gerechnet.</p>
   </div>`;
 }
@@ -1123,7 +1386,7 @@ function buildPrintHtml(mode) {
   const draw = parentId => {
     for (const t of childrenOf(parentId)) {
       body.push(`<div class="h h${Math.min(level(t), 3)}"><span>${esc(nodeOz(t))}</span><span>${esc(nodeName(t))}</span></div>`);
-      if (t.Vorbemerkung && !short) body.push(`<div class="pre">${br(t.Vorbemerkung)}</div>`);
+      if (textOn(t, "Vorbemerkung") && !short) body.push(`<div class="pre"><span class="pl">Vorbemerkung</span>${br(t.Vorbemerkung)}</div>`);
       for (const p of active(t.id)) {
         const k = typeKey(p);
         const label = k !== "normal" ? `<span class="tag">${TYPE_LABEL[k]}position</span>` : "";
@@ -1135,6 +1398,7 @@ function buildPrintHtml(mode) {
         </div>`);
       }
       draw(t.id);
+      if (textOn(t, "Nachbemerkung") && !short) body.push(`<div class="pre"><span class="pl">Nachbemerkung</span>${br(t.Nachbemerkung)}</div>`);
       body.push(`<div class="sum"><span></span><span>Summe ${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span>${money(nodeTotal(t.id))}</span></div>`);
     }
   };
@@ -1191,6 +1455,7 @@ function buildPrintHtml(mode) {
   .colhead .calc, .pos-calc { display: grid; grid-template-columns: 24mm 24mm 24mm; text-align: right; }
   .h { display: grid; grid-template-columns: 24mm 1fr; font-weight: bold; break-after: avoid; }
   .h1 { font-size: 11pt; margin: 6mm 0 2mm; } .h2 { font-size: 10pt; margin: 4mm 0 1.5mm; } .h3 { font-size: 9pt; margin: 3mm 0 1mm; }
+  .pl { display: block; font-size: 7pt; text-transform: uppercase; letter-spacing: .08em; color: #666; margin-bottom: .5mm; }
   .pre { margin: 0 0 2mm 24mm; padding: 1.5mm 2.5mm; border-left: 1.5pt solid #bbb; color: #333; }
   .pos { break-inside: avoid; padding: 1.8mm 0 2.2mm; }
   .pos-text { display: grid; grid-template-columns: 24mm 1fr; }
@@ -1252,11 +1517,12 @@ function buildPrintHtml(mode) {
 <table class="frame"><thead><tr><td>${runningHead}</td></tr></thead><tbody><tr><td>
   <h2>Inhaltsverzeichnis</h2>
   <table class="list">${toc}</table>
-  ${l.Vorbemerkung ? `<div class="page"><h2>Vorbemerkungen</h2><div>${br(l.Vorbemerkung)}</div></div>` : ""}
+  ${textOn(l, "Vorbemerkung") ? `<div class="page"><h2>Vorbemerkungen</h2><div>${br(l.Vorbemerkung)}</div></div>` : ""}
   <div class="page">
     <div class="colhead"><span>OZ</span><span>Leistungsbeschreibung</span><span class="calc"><span>Menge ME</span><span>EP in €</span><span>GB in €</span></span></div>
     ${body.join("")}
   </div>
+
   <div class="page">
     <h2>Zusammenstellung der LV-Gruppen</h2>
     <table class="list">${recap}</table>
@@ -1264,6 +1530,7 @@ function buildPrintHtml(mode) {
   <div class="page">
     <h2>Zusammenstellung</h2>
     <table class="list">${recap1}${totals}</table>
+    ${textOn(l, "Nachbemerkung") ? `<h2 style="margin-top:10mm">Nachbemerkungen</h2><div>${br(l.Nachbemerkung)}</div>` : ""}
     ${mode === "ausschreibung" ? sign : ""}
   </div>
 </td></tr></tbody></table>
@@ -1297,15 +1564,19 @@ function exportTypst() {
     for (const t of childrenOf(parentId)) {
       const size = [0, 12, 10.5, 9.5][Math.min(level(t), 3)];
       s += `#text(size: ${size}pt, weight: "bold")[#${ty(nodeOz(t))} #h(4mm) #${ty(nodeName(t))}]\n\n`;
+      if (textOn(t, "Vorbemerkung")) s += `#block(inset: (left: 24mm))[_Vorbemerkung:_ #${ty(t.Vorbemerkung)}]\n\n`;
       for (const p of positionsOf(t.id).filter(p => isActive(p.Aktiv))) {
         const gb = typeKey(p) === "normal" ? fmtMoney(lineTotal(p)) : "Nur Einh.-Pr.";
         s += `#pos(${ty(p.Positionsnummer)}, ${ty(p.Kurztext)}, ${ty(p.Langtext || "")}, ${ty(fmtQty(p.Menge))}, ${ty(p.Einheit)}, ${ty(fmtMoney(p.Einheitspreis))}, ${ty(gb)})\n`;
       }
       draw(t.id);
+      if (textOn(t, "Nachbemerkung")) s += `#block(inset: (left: 24mm))[_Nachbemerkung:_ #${ty(t.Nachbemerkung)}]\n\n`;
       s += `#align(right)[*Summe #${ty(nodeOz(t))}: #${ty(fmtMoney(nodeTotal(t.id)))} €*]\n\n`;
     }
   };
+  if (textOn(l, "Vorbemerkung")) s = s.replace("#line(length: 100%)\n\n", `#line(length: 100%)\n\n*Vorbemerkungen* \\ #${ty(l.Vorbemerkung)}\n\n`);
   draw(null);
+  if (textOn(l, "Nachbemerkung")) s += `*Nachbemerkungen* \\ #${ty(l.Nachbemerkung)}\n\n`;
   const net = lvTotal(), vat = round2(net * settings.mwst / 100);
   s += `#line(length: 100%)\n#align(right)[LV-Summe netto: *${fmtMoney(net)} €* \\ MwSt.: ${fmtMoney(vat)} € \\ *LV-Summe brutto: ${fmtMoney(net + vat)} €*]\n`;
 
@@ -1363,6 +1634,7 @@ function bindEvents() {
   // Icon-Leiste
   document.querySelectorAll(".rail [data-view]").forEach(b => b.addEventListener("click", async () => {
     await flushSave();
+    await flushText();
     setView(b.dataset.view);
   }));
   $("refreshButton").addEventListener("click", () => refresh());
@@ -1387,6 +1659,8 @@ function bindEvents() {
   $("titleForm").addEventListener("submit", saveTitleDialog);
   $("tCancel").addEventListener("click", () => $("titleDialog").close());
   $("tDelete").addEventListener("click", deleteTitle);
+  $("lvForm").addEventListener("submit", saveLvDialog);
+  $("lvCancel").addEventListener("click", () => $("lvDialog").close());
   $("schemaButton").addEventListener("click", migrateSchema);
   $("quickStartForm").addEventListener("submit", saveQuickStart);
   $("qCancel").addEventListener("click", () => $("quickStartDialog").close());
@@ -1395,6 +1669,7 @@ function bindEvents() {
   // Suche
   $("search").addEventListener("input", e => {
     searchTerm = e.target.value.trim().toLowerCase();
+    if (view === "texts") return renderTexts();
     if (view !== "edit") setView("edit");
     renderList();
   });
@@ -1414,11 +1689,13 @@ function bindEvents() {
 
   // Klicks in Liste und Übersicht (gemeinsame Aktionen)
   const onAction = e => {
-    const b = e.target.closest("[data-toggle],[data-move-node],[data-edit-node],[data-add-sub],[data-add-pos],[data-move-pos],[data-select-node],#addTitleInline");
+    const b = e.target.closest("[data-toggle-active],[data-open-texts],[data-toggle],[data-move-node],[data-edit-node],[data-edit-lv],[data-add-sub],[data-add-pos],[data-move-pos],[data-select-node],#addTitleInline");
     if (b) {
       e.stopPropagation();
       const d = b.dataset;
       if (b.id === "addTitleInline") openTitleDialog(null, null);
+      else if (d.toggleActive) toggleActive(Number(d.toggleActive));
+      else if (d.openTexts) openTexts(d.openTexts === "lv" ? "lv" : "node", Number(d.openTexts));
       else if (d.toggle) {
         const id = Number(d.toggle);
         collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
@@ -1426,6 +1703,7 @@ function bindEvents() {
       }
       else if (d.moveNode) moveTitle(Number(d.moveNode), Number(d.dir));
       else if (d.editNode) openTitleDialog(Number(d.editNode));
+      else if ("editLv" in d) openLvDialog();
       else if (d.addSub) openTitleDialog(null, Number(d.addSub));
       else if (d.addPos) insertPosition({}, Number(d.addPos));
       else if (d.movePos) movePosition(Number(d.movePos), Number(d.dir));
@@ -1447,6 +1725,20 @@ function bindEvents() {
     const p = e.target.closest("[data-doc-pos]");
     if (p) selectPosition(Number(p.dataset.docPos));
   });
+
+  // Texte
+  $("textSlots").addEventListener("click", e => {
+    const b = e.target.closest("[data-slot]");
+    if (!b) return;
+    const [kind, id, part] = b.dataset.slot.split(":");
+    selectText(kind, Number(id), part);
+  });
+  $("txPart").addEventListener("click", e => {
+    const b = e.target.closest("[data-part]");
+    if (b) selectText(textSel.kind, textSel.id, b.dataset.part);
+  });
+  $("txText").addEventListener("input", onTextInput);
+  $("txOn").addEventListener("change", e => toggleText(e.target.checked));
 
   // Inspector
   ["fKurztext", "fLangtext", "fMenge", "fEinheit", "fEinheitspreis", "fAktiv"].forEach(id => {
@@ -1471,7 +1763,7 @@ function bindEvents() {
     const mod = e.metaKey || e.ctrlKey;
     const k = e.key.toLowerCase();
     if (mod && k === "k") { e.preventDefault(); $("search").focus(); $("search").select(); }
-    else if (mod && k === "s") { e.preventDefault(); flushSave(); }
+    else if (mod && k === "s") { e.preventDefault(); flushSave(); flushText(); }
     else if (mod && e.key === "Enter") { e.preventDefault(); insertPosition(); }
     else if (e.key === "Escape" && !document.querySelector("dialog[open]") && document.activeElement !== $("search") && sel.posId) closeInspector();
   });
