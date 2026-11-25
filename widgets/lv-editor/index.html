@@ -20,6 +20,9 @@
   <!-- ===== Icon-Leiste ===== -->
   <nav class="rail">
     <div class="logo">LV</div>
+    <button type="button" class="ri" data-view="projects" title="Projekte (Übersicht)">
+      <svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1.2"/><rect x="11" y="3" width="6" height="6" rx="1.2"/><rect x="3" y="11" width="6" height="6" rx="1.2"/><rect x="11" y="11" width="6" height="6" rx="1.2"/></svg></button>
+    <span class="rsep"></span>
     <button type="button" class="ri on" data-view="edit" title="Liste bearbeiten">
       <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h9"/></svg></button>
     <button type="button" class="ri" data-view="texts" title="Texte (Vor- und Nachbemerkungen)">
@@ -27,12 +30,20 @@
     <button type="button" class="ri" data-view="document" title="Dokumentansicht">
       <svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z M12 2.5v3h3 M7.5 9h5M7.5 12h5M7.5 15h3"/></svg></button>
     <div class="menu-wrap">
-      <button type="button" class="ri" id="printMenuButton" title="Drucken / Export">
+      <button type="button" class="ri" id="printMenuButton" title="Drucken und Export">
         <svg viewBox="0 0 20 20"><path d="M6 7V2.5h8V7 M6 14H3.5V7h13v7H14 M6 11.5h8v6H6z"/></svg></button>
       <div class="menu" id="printMenu" hidden>
+        <div class="menu-sec">Druckstil</div>
+        <div class="seg pstyle"><button type="button" data-pstyle="klassisch">Klassisch</button><button type="button" data-pstyle="modern">Modern</button></div>
+        <hr>
         <button type="button" data-print="ausschreibung"><b>Ausschreibung</b><small>ohne Preise, mit Bieterfeldern</small></button>
-        <button type="button" data-print="kostenanschlag"><b>Kostenanschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
+        <button type="button" data-print="kostenanschlag"><b>Kostenvoranschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
+        <button type="button" data-print="kosten"><b>Kostenschätzung</b><small>kompakt, ohne Langtexte, mit Verteilung</small></button>
         <button type="button" data-print="kurz"><b>Kurz-LV</b><small>nur Kurztexte, mit Preisen</small></button>
+        <hr>
+        <button type="button" data-export="xlsx"><b>Excel / Calc</b><small>.xlsx mit Preisen und Formeln</small></button>
+        <button type="button" data-export="xlsx-bieter"><b>Excel / Calc für Bieter</b><small>.xlsx ohne Preise, GB rechnet mit</small></button>
+        <button type="button" data-export="csv"><b>CSV</b><small>Positionsliste, Semikolon</small></button>
         <hr>
         <button type="button" id="exportTypstButton"><b>Typst-Datei</b><small>für eigenes Layout</small></button>
       </div>
@@ -52,7 +63,7 @@
         <span class="sep">·</span>
         <select id="projectSelect" class="sel-pr" title="Projekt"></select>
         <span id="lvStatus" class="status" hidden></span>
-        <button type="button" class="link" id="newLvButton" title="Neues Projekt oder LV anlegen">+ LV</button>
+        <button type="button" class="link" id="newLvButton" title="Neues Projekt oder LV anlegen">+ Neu</button>
       </div>
       <label class="cmd">
         <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>
@@ -71,6 +82,23 @@
     <div class="scroll">
       <div class="list" id="list"></div>
       <div class="paper" id="documentView" hidden></div>
+    </div>
+
+    <div class="projects" id="projectsView" hidden>
+      <header class="bar">
+        <h1 class="ph">Projekte</h1><span class="muted" id="projCount"></span>
+        <span class="spacer"></span>
+        <label class="cmd pcmd">
+          <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>
+          <input type="search" id="projSearch" placeholder="Projekt, Bauherr, Ort …" autocomplete="off">
+        </label>
+        <button type="button" class="btn btn-primary" id="projNew">+ Projekt</button>
+      </header>
+      <div class="pscroll">
+        <div class="kpis" id="projKpis"></div>
+        <div class="seg pfilter" id="projFilter"></div>
+        <div id="projList"></div>
+      </div>
     </div>
 
     <div class="texts" id="textsView" hidden>
@@ -121,8 +149,9 @@
       </form>
       <div id="summaryPanel"></div>
       <div id="textPreview" hidden></div>
+      <div id="projectPanel" hidden></div>
     </div>
-    <div class="ins-total"><span>LV netto</span><b id="lvNet">0,00 €</b></div>
+    <div class="ins-total"><span id="insTotalLabel">LV netto</span><b id="lvNet">0,00 €</b></div>
   </aside>
 </div>
 <div id="globalMessage" class="toast" hidden></div>
@@ -145,9 +174,13 @@
 <!-- ===== Dialog: Projekt / LV anlegen ===== -->
 <dialog id="quickStartDialog" class="dialog">
   <form method="dialog" id="quickStartForm">
-    <h2>Neues Leistungsverzeichnis</h2>
+    <div class="seg q-mode" id="qMode">
+      <button type="button" data-mode="lv">LV im Projekt</button>
+      <button type="button" data-mode="project">Neues Projekt</button>
+    </div>
+    <h2 id="qHeading">Neues Leistungsverzeichnis</h2>
     <p class="muted" id="qProjectHint"></p>
-    <label class="switch"><input type="checkbox" id="qNewProject"><span>Neues Projekt anlegen</span></label>
+    <input type="checkbox" id="qNewProject" hidden>
     <div id="qProjectFields">
       <div class="grid-2">
         <label class="field"><span>Projektnummer</span><input type="text" id="qProjektnummer" placeholder="z. B. 2601"></label>
@@ -159,16 +192,48 @@
         <label class="field"><span>PLZ</span><input type="text" id="qPLZ"></label>
         <label class="field"><span>Ort</span><input type="text" id="qOrt"></label>
       </div>
+      <label class="switch" id="qWithLvWrap"><input type="checkbox" id="qWithLv" checked><span>Gleich ein LV anlegen</span></label>
     </div>
+    <div id="qLvFields">
     <div class="grid-2">
       <label class="field"><span>LV-Nummer</span><input type="text" id="qLvNummer" placeholder="z. B. 02" required></label>
       <label class="field"><span>Gewerk</span><input type="text" id="qGewerk" placeholder="z. B. Rohbau"></label>
     </div>
     <label class="field"><span>LV-Bezeichnung</span><input type="text" id="qLvName" placeholder="z. B. Rohbauarbeiten" required></label>
+    <label class="field"><span>Vorlage</span><select id="qTemplate">
+      <option value="">Leer beginnen</option>
+      <option value="din276">Kostenschätzung nach DIN 276 (Kostengruppen 100–800)</option>
+      <option value="din277">Flächen nach DIN 277 (NUF, TF, VF, KGF, BRI)</option>
+    </select></label>
+    </div>
     <div class="dialog-foot">
       <span class="spacer"></span>
       <button type="button" class="btn btn-ghost" id="qCancel">Abbrechen</button>
-      <button type="submit" class="btn btn-primary">Anlegen</button>
+      <button type="submit" class="btn btn-primary" id="qSubmit">Anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: Projekt bearbeiten ===== -->
+<dialog id="projectDialog" class="dialog">
+  <form method="dialog" id="projectForm">
+    <h2>Projekt bearbeiten</h2>
+    <div class="grid-2">
+      <label class="field"><span>Projektnummer</span><input type="text" id="pj_Projektnummer"></label>
+      <label class="field"><span>Status</span><select id="pj_Projektstatus"></select></label>
+    </div>
+    <label class="field"><span>Projektname</span><input type="text" id="pj_Projektname" required></label>
+    <label class="field"><span>Bauherr / Auftraggeber</span><input type="text" id="pj_Bauherr"></label>
+    <label class="field"><span>Straße</span><input type="text" id="pj_Strasse"></label>
+    <div class="grid-2">
+      <label class="field"><span>PLZ</span><input type="text" id="pj_PLZ"></label>
+      <label class="field"><span>Ort</span><input type="text" id="pj_Ort"></label>
+    </div>
+    <label class="field"><span>Planer / Architekt</span><input type="text" id="pj_Architekt"></label>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="pjCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
     </div>
   </form>
 </dialog>
@@ -207,6 +272,10 @@
     <label class="field"><span>Büro / Planer</span><input type="text" id="sPlaner"></label>
     <label class="field"><span>Anschrift (mehrzeilig)</span><textarea id="sAnschrift" rows="3"></textarea></label>
     <label class="field"><span>Ansprechpartner, Telefon, E-Mail (mehrzeilig)</span><textarea id="sKontakt" rows="3"></textarea></label>
+    <div class="field"><span>Logo für den Druck (SVG oder PNG)</span>
+      <div class="logo-row"><div class="logo-prev" id="sLogoPreview"></div>
+        <label class="btn">Datei wählen<input type="file" id="sLogoFile" accept="image/svg+xml,image/png,image/jpeg" hidden></label>
+        <button type="button" class="link danger" id="sLogoRemove">Entfernen</button></div></div>
     <div class="grid-2">
       <label class="field"><span>MwSt.-Satz %</span><input type="text" id="sMwst" class="num"></label>
       <label class="field"><span>Schrittweite Positionen</span><input type="text" id="sStep" class="num"></label>

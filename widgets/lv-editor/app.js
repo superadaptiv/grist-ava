@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.3.0";
+const VERSION = "2.7.0";
 
 const T = {
   projects: "Projekte",
@@ -615,6 +615,227 @@ async function openTexts(kind, id) {
 }
 
 // ------------------------------------------------------
+// PROJEKTÜBERSICHT (Reiter „Projekte“)
+// ------------------------------------------------------
+let projFilter = "Alle", projSearch = "", projSel = null;
+const projStates = () => (choices.Projektstatus && choices.Projektstatus.length) ? choices.Projektstatus : ["Planung", "Ausschreibung", "Ausführung", "Abgeschlossen"];
+const projState = p => p?.Projektstatus || "Planung";
+const projDot = st => "pd-" + String(st).toLowerCase().replace(/ü/g, "ue").replace(/ä/g, "ae").replace(/[^a-z]/g, "");
+const lvDot = st => "dot st-" + String(st || "Entwurf").toLowerCase().replace("ü", "ue");
+const lvsOfProject = pid => db.lvs.filter(l => refId(l.Projekt) === pid)
+  .sort((a, b) => String(lvNr(a)).localeCompare(String(lvNr(b)), "de", { numeric: true }));
+const isDone = p => /abgeschlossen/i.test(projState(p));
+
+function lvNetOf(lvId) {
+  const tids = new Set(db.titles.filter(t => refId(t.Leistungsverzeichnis) === lvId).map(t => t.id));
+  return round2(db.positions.filter(p => tids.has(refId(p.Titel)) && counts(p)).reduce((s, p) => s + lineTotal(p), 0));
+}
+
+function parseDeDate(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") return new Date(v * 1000);
+  const m = String(v).match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})?/);
+  if (!m) return null;
+  let y = m[3] ? Number(m[3]) : new Date().getFullYear();
+  if (y < 100) y += 2000;
+  return new Date(y, Number(m[2]) - 1, Number(m[1]));
+}
+
+function lvDates(l) {
+  return [
+    ["Angebotsfrist", pick(l, "Angebotsfrist") || l.Abgabedatum],
+    ["Submission", pick(l, "Submission")],
+    ["Zuschlag", pick(l, "Zuschlagsfrist")]
+  ].map(([k, v]) => ({ k, d: parseDeDate(v), l })).filter(x => x.d);
+}
+
+const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const daysUntil = d => Math.round((d - today0()) / 86400000);
+const fmtShort = d => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }).replace(/\.?$/, ".");
+const inDays = n => n === 0 ? "heute" : n === 1 ? "morgen" : `in ${n} Tagen`;
+
+function projectInfo(p) {
+  const lvs = lvsOfProject(p.id);
+  const nets = new Map(lvs.map(l => [l.id, lvNetOf(l.id)]));
+  const net = round2([...nets.values()].reduce((s, v) => s + v, 0));
+  const t0 = today0();
+  const dates = lvs.flatMap(lvDates).filter(x => x.d >= t0).sort((a, b) => a.d - b.d);
+  return { p, lvs, nets, net, dates, next: dates[0] };
+}
+
+function renderProjects() {
+  const all = db.projects.filter(p => p.Projektname || p.Projektnummer)
+    .sort((a, b) => String(b.Projektnummer).localeCompare(String(a.Projektnummer), "de", { numeric: true }));
+  const infos = all.map(projectInfo);
+  const active = infos.filter(i => !isDone(i.p));
+  const sum = (arr, f) => round2(arr.reduce((s, x) => s + f(x), 0));
+  const awarded = active.flatMap(i => i.lvs.filter(l => lvState(l) === "Beauftragt").map(l => i.nets.get(l.id)));
+  const nextSub = active.flatMap(i => i.dates.filter(d => d.k === "Submission").map(d => ({ ...d, p: i.p }))).sort((a, b) => a.d - b.d)[0];
+
+  $("projCount").textContent = `${all.length} Projekt${all.length === 1 ? "" : "e"} · ${db.lvs.length} LV${db.lvs.length === 1 ? "" : "s"}`;
+  $("projKpis").innerHTML = `
+    <div class="kpi"><small>Aktive Projekte</small><b>${active.length}</b><i>${infos.length - active.length} abgeschlossen</i></div>
+    <div class="kpi"><small>Kostenansatz netto</small><b>${fmtMoney(sum(active, i => i.net))} €</b><i>alle LVs aktiver Projekte</i></div>
+    <div class="kpi"><small>Beauftragt netto</small><b>${fmtMoney(sum(awarded, v => v))} €</b><i>${awarded.length} LV${awarded.length === 1 ? "" : "s"} beauftragt</i></div>
+    <div class="kpi"><small>Nächste Submission</small><b>${nextSub ? nextSub.d.toLocaleDateString("de-DE") : "–"}</b><i>${nextSub ? esc(`${nextSub.p.Projektnummer || ""} · LV ${lvNr(nextSub.l)} ${lvName(nextSub.l)}`) : "keine Termine eingetragen"}</i></div>`;
+
+  const states = ["Alle", ...projStates()];
+  const cnt = st => st === "Alle" ? infos.length : infos.filter(i => projState(i.p) === st).length;
+  $("projFilter").innerHTML = states.map(st => `<button type="button" data-pfilter="${esc(st)}" class="${st === projFilter ? "on" : ""}">${esc(st)}<b>${cnt(st)}</b></button>`).join("");
+
+  const q = projSearch.trim().toLowerCase();
+  const shown = infos.filter(i => (projFilter === "Alle" || projState(i.p) === projFilter) &&
+    (!q || [i.p.Projektnummer, i.p.Projektname, i.p.Bauherr, i.p.Ort, i.p.Strasse].join(" ").toLowerCase().includes(q)));
+  if (!projSel || !all.some(p => p.id === projSel)) projSel = sel.projectId && all.some(p => p.id === sel.projectId) ? sel.projectId : all[0]?.id ?? null;
+
+  const rows = shown.map(i => {
+    const p = i.p, st = projState(p);
+    const bars = i.lvs.map(l => `<i class="${lvDot(lvState(l)).replace("dot ", "")}" title="LV ${esc(lvNr(l))} ${esc(lvName(l))} · ${esc(lvState(l) || "Entwurf")}"></i>`).join("");
+    const byState = {};
+    i.lvs.forEach(l => { const s = lvState(l) || "Entwurf"; byState[s] = (byState[s] || 0) + 1; });
+    const lbl = i.lvs.length ? Object.entries(byState).map(([s, n]) => `${n} ${s}`).join(" · ") : "noch kein LV";
+    const n = i.next ? daysUntil(i.next.d) : null;
+    const due = i.next
+      ? `<span class="due ${n <= 14 ? "warn" : ""}">${i.next.k} ${fmtShort(i.next.d)}<small>LV ${esc(lvNr(i.next.l))} ${esc(lvName(i.next.l))} · ${inDays(n)}</small></span>`
+      : `<span class="due none">–</span>`;
+    return `<div class="pr ${p.id === projSel ? "on" : ""} ${isDone(p) ? "done" : ""}" data-proj="${p.id}">
+      <span class="nr">${esc(p.Projektnummer || "")}</span>
+      <span class="nm"><b>${esc(p.Projektname || "Ohne Namen")}</b><small>${esc([p.Bauherr, [p.PLZ, p.Ort].filter(Boolean).join(" ")].filter(Boolean).join(" · ") || "–")}</small></span>
+      <span class="pst"><i class="pdot ${projDot(st)}"></i>${esc(st)}</span>
+      <span class="lvbar">${bars}<span class="lbl">${esc(lbl)}</span></span>
+      <span class="r">${i.lvs.length}</span>
+      <span class="r sum">${i.lvs.length ? fmtMoney(i.net) : "–"}</span>
+      ${due}
+    </div>`;
+  }).join("");
+
+  $("projList").innerHTML = infos.length
+    ? `<div class="phd"><span>Nr.</span><span>Projekt</span><span>Status</span><span>LVs nach Stand</span><span class="r">LVs</span><span class="r">netto €</span><span>Nächster Termin</span></div>
+       ${rows || `<div class="empty"><b>Keine Treffer</b><span>Filter oder Suche anpassen.</span></div>`}
+       <div class="legend"><span><i class="dot"></i>Entwurf</span><span><i class="dot st-pruefung"></i>Prüfung</span><span><i class="dot st-ausschreibung"></i>Ausschreibung</span><span><i class="dot st-beauftragt"></i>Beauftragt</span><span class="spacer"></span><span>Klick wählt aus · Doppelklick öffnet das Projekt</span></div>`
+    : `<div class="empty"><b>Noch keine Projekte</b><span>Lege dein erstes Projekt an.</span><button class="btn btn-primary" data-new-project>+ Projekt</button></div>`;
+  renderProjectPanel();
+}
+
+function renderProjectPanel() {
+  const p = db.projects.find(x => x.id === projSel);
+  const el = $("projectPanel");
+  $("insTotalLabel").textContent = "Projekt netto";
+  if (!p) { el.innerHTML = `<div class="muted">Kein Projekt gewählt.</div>`; $("lvNet").textContent = "–"; return; }
+  const i = projectInfo(p);
+  $("lvNet").textContent = fmtMoney(i.net) + " €";
+  const st = projState(p);
+  const lvRows = i.lvs.map(l => {
+    const s = lvState(l) || "Entwurf";
+    const d = lvDates(l).filter(x => x.d >= today0()).sort((a, b) => a.d - b.d)[0];
+    const sub = [s, d ? `${d.k} ${fmtShort(d.d)}` : "", `${db.titles.filter(t => refId(t.Leistungsverzeichnis) === l.id).length} Titel`].filter(Boolean).join(" · ");
+    return `<button type="button" class="plv" data-open-lv="${l.id}" title="LV öffnen">
+      <i class="${lvDot(s)}"></i><span><b>LV ${esc(lvNr(l))} ${esc(lvName(l) || "Ohne Bezeichnung")}</b><small>${esc(sub)}</small></span>
+      <span class="v">${fmtMoney(i.nets.get(l.id))}<small>${s === "Beauftragt" ? "beauftragt" : "Ansatz"}</small></span></button>`;
+  }).join("");
+  const total = i.net || 1;
+  const stack = i.lvs.filter(l => i.nets.get(l.id) > 0).map(l =>
+    `<i class="${lvDot(lvState(l)).replace("dot ", "")}" style="flex:${i.nets.get(l.id) / total}" title="LV ${esc(lvNr(l))} · ${fmtMoney(i.nets.get(l.id))} €"></i>`).join("");
+  const share = {};
+  i.lvs.forEach(l => { const s = lvState(l) || "Entwurf"; share[s] = (share[s] || 0) + i.nets.get(l.id); });
+  const shareTxt = Object.entries(share).filter(([, v]) => v > 0).map(([s, v]) => `${Math.round(v / total * 100)} % ${s}`).join(" · ");
+  const tl = i.dates.slice(0, 5).map((d, k) => `<div class="${k === 0 ? "next" : ""}"><b>${fmtShort(d.d)}</b> ${esc(d.k)} LV ${esc(lvNr(d.l))} ${esc(lvName(d.l))}<small>${inDays(daysUntil(d.d))}</small></div>`).join("");
+  el.innerHTML = `
+    <div class="ins-h"><span>Projekt</span></div>
+    <div class="ins-oz">${esc(p.Projektnummer || "")}</div>
+    <h2 class="pname">${esc(p.Projektname || "Ohne Namen")}</h2>
+    <span class="pst"><i class="pdot ${projDot(st)}"></i>${esc(st)}</span>
+    <div class="kv">
+      <span>Bauherr</span><span>${esc(p.Bauherr || "–")}</span>
+      <span>Adresse</span><span>${[esc(pick(p, "Strasse", "Straße")), esc([p.PLZ, p.Ort].filter(Boolean).join(" "))].filter(Boolean).join("<br>") || "–"}</span>
+      <span>Planer</span><span>${esc(p.Architekt || settings.planer || "–")}</span>
+    </div>
+    <div class="acts-row">
+      <button type="button" class="btn btn-primary" data-open-project="${p.id}" ${i.lvs.length ? "" : "disabled"}>LV öffnen</button>
+      <button type="button" class="btn" data-new-lv="${p.id}">+ LV</button>
+      <button type="button" class="btn" data-edit-project="${p.id}">Bearbeiten</button>
+    </div>
+    <div class="sec">Leistungsverzeichnisse</div>
+    ${lvRows || `<div class="muted">Noch kein LV. Mit „+ LV“ anlegen.</div>`}
+    ${stack ? `<div class="sec"><span>Kosten nach LV</span><span>${fmtMoney(i.net)} €</span></div><div class="stack">${stack}</div><div class="muted">${esc(shareTxt)}</div>` : ""}
+    <div class="sec">Termine</div>
+    ${tl ? `<div class="tl">${tl}</div>` : `<div class="muted">Keine anstehenden Termine. Termine trägst du in den LV-Angaben ein (Angebotsfrist, Submission, Zuschlagsfrist).</div>`}`;
+}
+
+async function openProject(pid, lvId = null) {
+  sel.projectId = pid;
+  sel.lvId = lvId ?? lvsOfProject(pid)[0]?.id ?? null;
+  sel.nodeId = sel.posId = null;
+  collapsed = new Set();
+  localStorage.setItem("lv.project", pid);
+  if (sel.lvId) localStorage.setItem("lv.lv", sel.lvId);
+  validateSelection();
+  setView("edit");
+  renderAll();
+}
+
+function openProjectDialog(pid) {
+  const p = db.projects.find(x => x.id === pid);
+  if (!p) return;
+  const st = $("pj_Projektstatus");
+  st.innerHTML = "";
+  projStates().forEach(c => st.add(new Option(c, c)));
+  for (const f of ["Projektnummer", "Projektname", "Bauherr", "Strasse", "PLZ", "Ort", "Architekt", "Projektstatus"]) {
+    const el = $("pj_" + f);
+    const exists = f in p;
+    el.closest(".field").hidden = !exists;
+    el.value = exists ? (p[f] ?? "") : "";
+  }
+  $("projectDialog").dataset.id = pid;
+  $("projectDialog").showModal();
+}
+
+async function saveProjectDialog(ev) {
+  ev.preventDefault();
+  const pid = Number($("projectDialog").dataset.id);
+  const p = db.projects.find(x => x.id === pid);
+  $("projectDialog").close();
+  if (!p) return;
+  const values = {};
+  for (const f of ["Projektnummer", "Projektname", "Bauherr", "Strasse", "PLZ", "Ort", "Architekt", "Projektstatus"]) if (f in p) values[f] = $("pj_" + f).value;
+  await apply([["UpdateRecord", T.projects, pid, values]]);
+  renderAll();
+}
+
+function bindProjects() {
+  $("projSearch").addEventListener("input", e => { projSearch = e.target.value; renderProjects(); });
+  $("projNew").addEventListener("click", () => openQuickStart("project"));
+  $("projFilter").addEventListener("click", e => {
+    const b = e.target.closest("[data-pfilter]");
+    if (b) { projFilter = b.dataset.pfilter; renderProjects(); }
+  });
+  $("projList").addEventListener("click", e => {
+    if (e.target.closest("[data-new-project]")) return openQuickStart("project");
+    const r = e.target.closest("[data-proj]");
+    if (r) {
+      projSel = Number(r.dataset.proj);
+      $("projList").querySelectorAll(".pr").forEach(x => x.classList.toggle("on", x === r));
+      renderProjectPanel();
+    }
+  });
+  $("projList").addEventListener("dblclick", e => {
+    const r = e.target.closest("[data-proj]");
+    if (r) openProject(Number(r.dataset.proj));
+  });
+  $("projectPanel").addEventListener("click", e => {
+    const b = e.target.closest("[data-open-lv],[data-open-project],[data-new-lv],[data-edit-project]");
+    if (!b) return;
+    const d = b.dataset;
+    if (d.openLv) openProject(projSel, Number(d.openLv));
+    else if (d.openProject) openProject(Number(d.openProject));
+    else if (d.newLv) { sel.projectId = Number(d.newLv); validateSelection(); openQuickStart("lv"); }
+    else if (d.editProject) openProjectDialog(Number(d.editProject));
+  });
+  $("projectForm").addEventListener("submit", saveProjectDialog);
+  $("pjCancel").addEventListener("click", () => $("projectDialog").close());
+}
+
+// ------------------------------------------------------
 // RENDERING  (Layout „Kompakt“: Icon-Leiste · Liste · Inspector)
 // ------------------------------------------------------
 function renderAll() {
@@ -624,6 +845,7 @@ function renderAll() {
   renderInspector();
   if (view === "document") renderDocument();
   if (view === "texts") { renderTexts(); if (!txDirty) fillTextEditor(); renderTextPreview(); }
+  if (view === "projects") renderProjects();
 }
 
 function renderHeader() {
@@ -649,6 +871,7 @@ function renderHeader() {
   el.title = isLocked() ? "Ab diesem Status werden Ordnungszahlen nicht mehr automatisch geändert." : "";
 
   $("lvNet").textContent = fmtMoney(lvTotal()) + " €";
+  $("insTotalLabel").textContent = "LV netto";
   $("addPositionButton").disabled = !sel.lvId || !walk().length;
 }
 
@@ -685,7 +908,11 @@ function subtreeMatches(t) {
 function renderList() {
   const el = $("list");
   if (!sel.lvId) {
-    el.innerHTML = `<div class="empty"><b>Kein Leistungsverzeichnis gewählt</b><span>Oben ein LV wählen oder mit „+ LV“ ein neues anlegen.</span></div>`;
+    const pr = project();
+    el.innerHTML = pr
+      ? `<div class="empty"><b>Projekt ${esc(pr.Projektnummer || "")} ${esc(pr.Projektname || "")} hat noch kein LV</b><span>Lege das erste Leistungsverzeichnis an, sobald du es brauchst.</span><button class="btn btn-primary" id="emptyNewLv">+ LV anlegen</button></div>`
+      : `<div class="empty"><b>Noch kein Projekt</b><span>Oben über „+ Neu“ ein Projekt anlegen.</span></div>`;
+    $("emptyNewLv")?.addEventListener("click", () => openQuickStart("lv"));
     return;
   }
   const total = lvTotal() || 1;
@@ -701,8 +928,8 @@ function renderList() {
       const sum = nodeTotal(t.id);
       const count = pos.length + kids.length;
       html.push(`
-        <div class="g lvl-${lvl} ${t.id === sel.nodeId && !sel.posId ? "on" : ""}" data-node="${t.id}">
-          <button class="caret" data-toggle="${t.id}" title="${open ? "Zuklappen" : "Aufklappen"}">${open ? "▾" : "▸"}</button>
+        <div class="g lvl-${lvl} ${t.id === sel.nodeId && !sel.posId ? "on" : ""}" data-node="${t.id}" draggable="true" title="Ziehen zum Verschieben">
+          <button class="caret ${open ? "open" : ""}" data-toggle="${t.id}" title="${open ? "Zuklappen" : "Aufklappen"}" aria-label="${open ? "Zuklappen" : "Aufklappen"}"></button>
           <span class="oz">${esc(nodeOz(t))}</span>
           <span class="n">${esc(nodeName(t))}</span>
           <span class="c">${pos.length ? pos.length + " Pos." : kids.length ? kids.length + " Untertitel" : "leer"}</span>
@@ -722,7 +949,7 @@ function renderList() {
         const k = typeKey(p);
         const active = isActive(p.Aktiv);
         html.push(`
-          <div class="row ${p.id === sel.posId ? "on" : ""} ${active ? "" : "off"}" data-pos="${p.id}">
+          <div class="row ${p.id === sel.posId ? "on" : ""} ${active ? "" : "off"}" data-pos="${p.id}" draggable="true">
             <button class="adot ${active ? "on" : ""}" data-toggle-active="${p.id}" title="${active ? "Aktiv" : "Inaktiv"} (klicken zum Umschalten)"></button>
             <span class="oz">${esc(p.Positionsnummer)}</span>
             <span class="kt">${esc(p.Kurztext || "(ohne Kurztext)")}${k !== "normal" ? `<span class="tag t-${k}">${TYPE_LABEL[k]}</span>` : ""}${active ? "" : '<span class="tag t-off">inaktiv</span>'}<small>${esc(String(p.Langtext || "").split("\n")[0])}</small></span>
@@ -731,6 +958,7 @@ function renderList() {
             <span class="r">${fmtMoney(p.Einheitspreis)}</span>
             <span class="r gb">${k === "normal" ? fmtMoney(lineTotal(p)) : '<em>nur EP</em>'}</span>
             <span class="mv">
+              <span class="grip" title="Mit der Maus ziehen, um die Position zu verschieben – auch in einen anderen Titel">⠿</span>
               <button data-move-pos="${p.id}" data-dir="-1" ${j === 0 ? "disabled" : ""} title="Nach oben">↑</button>
               <button data-move-pos="${p.id}" data-dir="1" ${j === pos.length - 1 ? "disabled" : ""} title="Nach unten">↓</button>
             </span>
@@ -744,7 +972,8 @@ function renderList() {
   };
   draw(null);
   if (!walk().length) {
-    html.push(`<div class="empty"><b>Noch keine Titel</b><span>Ein LV besteht aus Titeln (01, 02 …) und darin Positionen.</span></div>`);
+    html.push(`<div class="empty"><b>Noch keine Titel</b><span>Ein LV besteht aus Titeln (01, 02 …) und darin Positionen. Du kannst auch mit einer Vorlage beginnen:</span>
+      <div class="tpl-row">${Object.entries(TEMPLATES).map(([k, t]) => `<button type="button" class="btn" data-template="${k}" title="${esc(t.hint)}">${esc(t.name)}</button>`).join("")}</div></div>`);
   } else if (searchTerm && !html.length) {
     html.push(`<div class="empty"><b>Keine Treffer</b><span>für „${esc(searchTerm)}“</span></div>`);
   }
@@ -753,6 +982,12 @@ function renderList() {
 }
 
 function renderInspector() {
+  const projects = view === "projects";
+  $("projectPanel").hidden = !projects;
+  if (projects) {
+    $("posPanel").hidden = $("summaryPanel").hidden = $("textPreview").hidden = true;
+    return renderProjectPanel();
+  }
   const texts = view === "texts";
   const p = texts ? null : position(sel.posId);
   $("textPreview").hidden = !texts;
@@ -894,12 +1129,16 @@ function setView(v) {
   $("list").hidden = v !== "edit";
   $("documentView").hidden = v !== "document";
   $("textsView").hidden = v !== "texts";
-  document.querySelector(".scroll").hidden = v === "texts";
+  $("projectsView").hidden = v !== "projects";
+  document.querySelector(".mid").classList.toggle("projview", v === "projects");
+  document.querySelector(".scroll").hidden = v === "texts" || v === "projects";
   $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
   renderInspector();
   if (v === "texts") { renderTexts(); fillTextEditor(); renderTextPreview(); }
   document.querySelector(".scroll").scrollTop = 0;
   if (v === "document") renderDocument();
+  if (v === "projects") renderProjects();
+  if (v !== "projects") renderHeader();
 }
 
 // ------------------------------------------------------
@@ -1037,6 +1276,61 @@ async function movePosition(id, dir) {
   ]);
   renderAll();
   if (sel.posId) fillForm(position(sel.posId));
+}
+
+// Position an eine beliebige Stelle verschieben (Drag & Drop, auch in einen anderen Titel)
+async function movePositionTo(id, nodeId, idx) {
+  await flushSave();
+  const p = position(id);
+  const node = title(nodeId);
+  if (!p || !node) return;
+  const fromId = refId(p.Titel);
+  const oldIdx = positionsOf(fromId).findIndex(x => x.id === id);
+  const target = positionsOf(nodeId).filter(x => x.id !== id);
+  idx = Math.max(0, Math.min(idx, target.length));
+  if (fromId === nodeId && oldIdx === idx) return;
+  const locked = isLocked();
+  if (locked && !confirm("Das LV ist bereits ausgeschrieben. Die Position bekommt eine freie Ordnungszahl an der neuen Stelle, alle anderen OZ bleiben gleich. Fortfahren?")) return;
+  let oz = null;
+  if (locked) {
+    oz = lockedOz(node, target[idx - 1], target[idx]);
+    if (!oz) return toast("An dieser Stelle ist keine Ordnungszahl mehr frei.");
+  }
+  target.splice(idx, 0, p);
+  p.Titel = nodeId; // lokal, damit die Neunummerierung stimmt
+  const actions = target.map((x, k) => {
+    x.Sortierung = k + 1;
+    const v = { Sortierung: k + 1 };
+    if (x.id === id) { v.Titel = nodeId; if (oz) { v.Positionsnummer = oz; x.Positionsnummer = oz; } }
+    return ["UpdateRecord", T.positions, x.id, v];
+  });
+  if (fromId !== nodeId) {
+    positionsOf(fromId).forEach((x, k) => { x.Sortierung = k + 1; actions.push(["UpdateRecord", T.positions, x.id, { Sortierung: k + 1 }]); });
+    collapsed.delete(nodeId);
+  }
+  await apply([...actions, ...renumberActions()]);
+  sel.nodeId = nodeId;
+  renderAll();
+  if (sel.posId) fillForm(position(sel.posId));
+  if (fromId !== nodeId) toast(`Position nach ${nodeOz(node)} ${nodeName(node)} verschoben.`);
+}
+
+// Titel innerhalb derselben Ebene an eine beliebige Stelle verschieben
+async function moveTitleTo(id, targetId, after) {
+  await flushSave();
+  const t = title(id), target = title(targetId);
+  if (!t || !target || id === targetId) return;
+  if ((parentOf(t) || null) !== (parentOf(target) || null)) return toast("Titel lassen sich nur innerhalb derselben Ebene verschieben.");
+  if (isLocked() && !confirm("Das LV ist bereits ausgeschrieben. Die Ordnungszahlen bleiben gleich. Fortfahren?")) return;
+  const sibs = childrenOf(parentOf(t)).filter(s => s.id !== id);
+  const k = sibs.findIndex(s => s.id === targetId) + (after ? 1 : 0);
+  sibs.splice(k, 0, t);
+  sibs.forEach((s, i) => { s.Sortierung = i + 1; });
+  await apply([
+    ...sibs.map((s, i) => ["UpdateRecord", T.titles, s.id, { Sortierung: i + 1 }]),
+    ...renumberActions()
+  ]);
+  renderAll();
 }
 
 // ------------------------------------------------------
@@ -1204,16 +1498,33 @@ async function setRefDisplay(refCols) {
 }
 
 // Projekt + LV in einem Dialog anlegen (nach der Ersteinrichtung oder über „+ LV“)
-function openQuickStart() {
+// mode: "lv" = neues LV im aktuellen Projekt, "project" = neues Projekt (LV optional)
+function openQuickStart(mode) {
   const pr = project();
-  $("qNewProject").checked = !pr;
-  $("qNewProject").disabled = !pr;
-  $("qProjectFields").hidden = !!pr;
-  $("qProjectHint").textContent = pr ? `Neues LV in Projekt ${pr.Projektnummer || ""} ${pr.Projektname || ""}` : "";
+  if (!pr) mode = "project";
+  mode = mode || "lv";
   $("quickStartForm").reset();
-  $("qNewProject").checked = !pr;
+  $("qMode").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
+  $("qMode").querySelector('[data-mode="lv"]').disabled = !pr;
+  $("qNewProject").checked = mode === "project";
+  $("qWithLv").checked = mode !== "project" || !pr;
+  syncQuickStart();
   $("quickStartDialog").showModal();
-  (pr ? $("qLvNummer") : $("qProjektnummer")).focus();
+  (mode === "lv" ? $("qLvNummer") : $("qProjektnummer")).focus();
+}
+
+function syncQuickStart() {
+  const pr = project();
+  const newProject = $("qNewProject").checked;
+  const withLv = !newProject || $("qWithLv").checked;
+  $("qProjectFields").hidden = !newProject;
+  $("qWithLvWrap").hidden = !newProject;
+  $("qLvFields").hidden = !withLv;
+  $("qLvNummer").required = $("qLvName").required = withLv;
+  $("qProjektname").required = newProject;
+  $("qHeading").textContent = newProject ? "Neues Projekt" : "Neues Leistungsverzeichnis";
+  $("qProjectHint").textContent = newProject ? "" : `In Projekt ${pr?.Projektnummer || ""} ${pr?.Projektname || ""}`;
+  $("qSubmit").textContent = newProject && !withLv ? "Projekt anlegen" : "Anlegen";
 }
 
 async function saveQuickStart(ev) {
@@ -1227,6 +1538,16 @@ async function saveQuickStart(ev) {
       Strasse: v("qStrasse"), PLZ: v("qPLZ"), Ort: v("qOrt"), Projektstatus: "Planung"
     }]]);
     pid = newRowId(res);
+    if (!$("qWithLv").checked) {
+      sel.projectId = pid;
+      sel.lvId = sel.nodeId = sel.posId = null;
+      localStorage.setItem("lv.project", pid);
+      projSel = pid;
+      validateSelection();
+      renderAll();
+      toast("Projekt angelegt. LVs legst du später über „+ Neu“ an.");
+      return;
+    }
   }
   const res2 = await apply([["AddRecord", T.lvs, null, {
     Projekt: pid, LV_Nummer: v("qLvNummer"), LV_Bezeichnung: v("qLvName"), Gewerk: v("qGewerk"), Bearbeitungsstand: "Entwurf"
@@ -1235,8 +1556,10 @@ async function saveQuickStart(ev) {
   sel.lvId = newRowId(res2);
   sel.nodeId = sel.posId = null;
   validateSelection();
+  if (view === "projects") setView("edit");
   renderAll();
-  openTitleDialog(null, null);
+  const tpl = $("qTemplate").value;
+  if (tpl) await insertTemplate(tpl); else openTitleDialog(null, null);
 }
 
 // ------------------------------------------------------
@@ -1280,17 +1603,21 @@ function openSettings() {
   $("sKontakt").value = settings.kontakt;
   $("sMwst").value = String(settings.mwst).replace(".", ",");
   $("sStep").value = settings.step;
+  pendingLogo = settings.logo || "";
+  showLogoPreview();
   $("settingsDialog").showModal();
 }
 
 async function saveSettings(ev) {
   ev.preventDefault();
   settings = {
+    ...settings,
     planer: $("sPlaner").value.trim(),
     anschrift: $("sAnschrift").value,
     kontakt: $("sKontakt").value,
     mwst: parseDe($("sMwst").value) || 19,
-    step: Math.max(1, Math.round(parseDe($("sStep").value)) || 10)
+    step: Math.max(1, Math.round(parseDe($("sStep").value)) || 10),
+    logo: pendingLogo || ""
   };
   $("settingsDialog").close();
   try {
@@ -1300,6 +1627,35 @@ async function saveSettings(ev) {
     toast("Einstellungen nur für diese Sitzung übernommen (Widget-Optionen nicht speicherbar).");
   }
   renderAll();
+}
+
+function syncPrintStyle() {
+  document.querySelectorAll("[data-pstyle]").forEach(b => b.classList.toggle("on", b.dataset.pstyle === printStyle()));
+}
+
+// Logo für den Druck: SVG bleibt Vektor, Pixelbilder werden auf max. 800 px verkleinert (PNG)
+let pendingLogo = "";
+function showLogoPreview() {
+  $("sLogoPreview").innerHTML = pendingLogo ? `<img src="${pendingLogo}" alt="Logo">` : '<span class="muted">Kein Logo</span>';
+  $("sLogoRemove").hidden = !pendingLogo;
+}
+function readLogo(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const url = String(r.result);
+    if (/^data:image\/svg/.test(url)) { pendingLogo = url; return showLogoPreview(); }
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 800 / Math.max(img.width, img.height));
+      const c = Object.assign(document.createElement("canvas"), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      pendingLogo = c.toDataURL("image/png");
+      showLogoPreview();
+    };
+    img.src = url;
+  };
+  r.readAsDataURL(file);
 }
 
 // ------------------------------------------------------
@@ -1370,7 +1726,7 @@ function printLV(mode) {
   const w = window.open("", "_blank");
   if (!w) return toast("Bitte Pop-ups für dieses Widget erlauben.");
   w.document.open();
-  w.document.write(buildPrintHtml(mode));
+  w.document.write(mode === "kosten" ? buildCostHtml() : buildPrintHtml(mode));
   w.document.close();
 }
 
@@ -1378,7 +1734,7 @@ function buildPrintHtml(mode) {
   const l = lv(), pr = project();
   const priced = mode !== "ausschreibung";
   const short = mode === "kurz";
-  const docTitle = mode === "ausschreibung" ? "Ausschreibung" : mode === "kurz" ? "Kurz-LV" : "Kostenanschlag";
+  const docTitle = mode === "ausschreibung" ? "Ausschreibung" : mode === "kurz" ? "Kurz-LV" : "Kostenvoranschlag";
   const dots = '<span class="dots"></span>';
   const money = v => priced ? fmtMoney(v) : dots;
   const now = new Date();
@@ -1441,7 +1797,7 @@ function buildPrintHtml(mode) {
     <span>LV</span><span>${esc(lvNr(l))} – ${esc(lvName(l))}</span>
   </div></div>`;
 
-  return `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
 <title>${esc(pr.Projektnummer)}_LV ${esc(lvNr(l))} ${esc(lvName(l))}</title>
 <style>
   @page { size: A4; margin: 36mm 14mm 20mm 20mm;
@@ -1576,6 +1932,525 @@ ${runningHead}
 <\/script>
 <script src="${pagedSrc}" onerror="go()"><\/script>
 </body></html>`;
+  return printStyle() === "modern" ? modernizePrint(html, { docTitle, pr, l, planer, stamp }) : html;
+}
+
+// ------------------------------------------------------
+// DRUCKSTIL „MODERN“: gleiche Inhalte wie das klassische LV,
+// Gestaltung wie die Kostenschätzung (Linien, Graustufen, Logo unten rechts)
+// ------------------------------------------------------
+const printStyle = () => settings.printStyle === "modern" ? "modern" : "klassisch";
+
+function modernizePrint(html, { docTitle, pr, l, planer, stamp }) {
+  const cssStr = v => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]+/g, " ") + '"';
+  // 1. Seitenränder und Fußzeile: Seite/Druckdatum links, Logo rechts
+  html = html.replace(/@page \{ size: A4; margin:[\s\S]*?\.rh \{ position: running\(rh\); \}/, `@page { size: A4; margin: 34mm 20mm 28mm 20mm;
+    @top-left { content: element(rh); vertical-align: bottom; padding-bottom: 5mm; width: 100%; }
+    @bottom-left { width: 90mm; content: "Seite " counter(page) " von " counter(pages) ${cssStr("  ·  Druck " + stamp)}; font: 7pt Arial, sans-serif; color: #777; vertical-align: bottom; padding-bottom: 16.35mm; white-space: pre; }
+    @bottom-right { width: 80mm; content: element(logo); vertical-align: bottom; text-align: right; padding-bottom: 16.35mm; } }
+  @page cover { margin: 16mm 20mm 28mm 20mm;
+    @top-left { content: none; } @bottom-left { content: none; } }
+  .cover { page: cover; }
+  .rh { position: running(rh); }
+  .logo-run { position: running(logo); text-align: right; line-height: 0; }
+  .logo-run img { max-height: 11mm; max-width: 80mm; display: inline-block; }`);
+  // 2. Gestaltung
+  html = html.replace("</style>", `
+  /* ---- Modern ---- */
+  .doc-kind { font-size: 7.5pt; letter-spacing: .18em; color: #111; font-weight: bold; }
+  .m-head h1 { font-size: 22pt; margin: 2mm 0 1mm; letter-spacing: -.01em; }
+  .m-head .m-sub { color: #555; font-size: 10.5pt; }
+  .m-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; margin: 7mm 0 0; padding: 3mm 0; border-top: 1.2pt solid #111; border-bottom: .4pt solid #111; }
+  .m-meta span { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .1em; color: #666; margin-bottom: .6mm; }
+  .cover { gap: 8mm; min-height: 240mm; }
+  .cols { gap: 8mm; }
+  .box h3 { font-size: 6.5pt; letter-spacing: .1em; color: #666; font-weight: normal; border: 0; border-top: 1.2pt solid #111; padding: 1.8mm 0 0; margin: 0 0 2mm; }
+  .dots { border-bottom: .5pt solid #999; }
+  .sign div { border-top: .5pt solid #111; }
+  .rh { display: flex; gap: 5mm; align-items: baseline; width: 100%; border-bottom: .4pt solid #111; padding-bottom: 1.5mm; font-size: 7.5pt; }
+  .rh .rhg { display: none; }
+  .rh .m-rh-l { margin-right: 5mm; text-transform: uppercase; letter-spacing: .12em; font-weight: bold; font-size: 7pt; }
+  .rh .m-rh-r { color: #555; }
+  .colhead { border-bottom: 1.2pt solid #111; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .06em; font-weight: normal; color: #666; padding-bottom: 1.5mm; }
+  .h1 { font-size: 11.5pt; margin: 8mm 0 2mm; padding-bottom: 1.5mm; border-bottom: .8pt solid #111; }
+  .h2 { font-size: 10pt; margin: 5mm 0 1.5mm; padding-bottom: 1mm; border-bottom: .4pt solid #999; }
+  .h3 { font-size: 9pt; margin: 4mm 0 1mm; }
+  .h > span:first-child { font-weight: normal; color: #555; }
+  .pos { border-bottom: .3pt solid #e2e2e2; padding: 2mm 0 2.4mm; }
+  .pos-text > span:first-child { color: #777; font-size: 8pt; }
+  .pre { border-left: 0; border-top: .4pt solid #111; padding: 1.5mm 0 0; margin: 1mm 0 3mm 24mm; }
+  .pl { font-size: 6.5pt; letter-spacing: .1em; }
+  .sum { border-top: .8pt solid #111; padding-top: 2.5mm; }
+  .tag { border-radius: 0; }
+  h2 { font-size: 13pt; letter-spacing: -.005em; }
+  table.list tr.toc-l1 td { border-bottom: .4pt solid #111; }
+  table.z th { border-bottom: 1.2pt solid #111; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .06em; font-weight: normal; color: #666; }
+  table.z tr.l1 td { border-bottom: .4pt solid #999; }
+  .tot .n { border-top: 1.2pt solid #111; }
+  .tot .b { border-top: .4pt solid #111; }
+</style>`);
+  // 3. Deckblatt-Kopf wie bei der Kostenschätzung
+  {
+    const a = html.indexOf('<section class="cover">');
+    const z = html.indexOf('<div class="cols">\n    <div class="box"><h3>Auftraggeber');
+    if (a >= 0 && z > a) html = html.slice(0, a) + `<section class="cover">
+  <div class="m-head">
+    <div class="doc-kind">${esc(docTitle)}</div>
+    <h1>${esc(pr.Projektname || "")}</h1>
+    <div class="m-sub">LV ${esc(lvNr(l))} ${esc(lvName(l) || "")}${l.Gewerk ? " · " + esc(l.Gewerk) : ""}</div>
+    <div class="m-meta">
+      <div><span>Projekt</span>${esc(pr.Projektnummer || "–")}</div>
+      <div><span>Bauherr</span>${esc(pr.Bauherr || "–")}</div>
+      <div><span>Aufgestellt</span>${esc(planer || "–")}<br>${new Date().toLocaleDateString("de-DE")}</div>
+    </div>
+  </div>
+  ` + html.slice(z);
+  }
+  // 4. Laufender Kopf: einzeilig
+  html = html.replace(/<div class="rh"><div class="rhg">/, `<div class="rh"><span class="m-rh-l">${esc(docTitle)}</span><span class="m-rh-r">${esc(`${pr.Projektnummer || ""} ${pr.Projektname || ""} · LV ${lvNr(l)} ${lvName(l)}`)}</span><div class="rhg">`);
+  // 5. Logo
+  // innerhalb des Deckblatts einfügen, sonst entsteht vor dem Deckblatt eine leere Seite
+  if (settings.logo) html = html.replace('<section class="cover">', `<section class="cover">\n<div class="logo-run"><img src="${settings.logo}" alt=""></div>`);
+  return html;
+}
+
+// ------------------------------------------------------
+// KOSTENSCHÄTZUNG („LV light“): kompaktes Layout ohne Langtexte
+// ------------------------------------------------------
+function buildCostHtml() {
+  const l = lv(), pr = project();
+  const now = new Date();
+  const stamp = `${now.toLocaleDateString("de-DE")} ${now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
+  const planer = settings.planer || pr.Architekt || "";
+  const addr = [pick(pr, "Strasse", "Straße"), [pr.PLZ, pr.Ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const net = lvTotal(), vat = round2(net * settings.mwst / 100);
+  const share = v => net ? Math.round(v / net * 1000) / 10 : 0;
+  const pct = v => share(v).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %";
+  const footLeft = `${pr.Projektnummer || ""} ${pr.Projektname || ""} · Kostenschätzung ${lvName(l)}`.trim();
+  const cssStr = v => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]+/g, " ") + '"';
+  const pagedSrc = new URL("vendor/paged.polyfill.min.js", location.href).href;
+
+  const rows = [];
+  const hasActive = id => positionsOf(id).some(x => isActive(x.Aktiv)) || childrenOf(id).some(c => hasActive(c.id));
+  const draw = parentId => {
+    for (const t of childrenOf(parentId)) {
+      if (!hasActive(t.id)) continue; // ganz abgeschaltete Gruppen weglassen
+      const lvl = Math.min(level(t), 3), sum = nodeTotal(t.id);
+      rows.push(`<tr class="t t${lvl}"><td>${esc(nodeOz(t))}</td><td colspan="4">${esc(nodeName(t))}</td><td class="r">${fmtMoney(sum)}</td><td class="r p">${lvl === 1 ? pct(sum) : ""}</td></tr>`);
+      if (textOn(t, "Vorbemerkung")) rows.push(`<tr class="note"><td></td><td colspan="6">${br(t.Vorbemerkung)}</td></tr>`);
+      for (const p of positionsOf(t.id).filter(x => isActive(x.Aktiv))) {
+        const k = typeKey(p);
+        rows.push(`<tr class="pos${k !== "normal" ? " opt" : ""}"><td>${esc(p.Positionsnummer)}</td><td>${esc(p.Kurztext || "")}${k !== "normal" ? ` <span class="tag">${TYPE_LABEL[k]}</span>` : ""}</td>
+          <td class="r">${fmtQty(p.Menge)}</td><td>${esc(p.Einheit || "")}</td><td class="r">${fmtMoney(p.Einheitspreis)}</td>
+          <td class="r">${k === "normal" ? fmtMoney(lineTotal(p)) : "<i>nur EP</i>"}</td><td></td></tr>`);
+      }
+      draw(t.id);
+    }
+  };
+  draw(null);
+
+  const top = childrenOf(null);
+  // Verteilung: ein durchgehender Balken in Grautönen, darunter eine Legende als Tabelle
+  const GREYS = ["#111111", "#4a4a4a", "#7a7a7a", "#a3a3a3", "#c6c6c6", "#dedede", "#2e2e2e", "#949494"];
+  const parts = top.filter(t => nodeTotal(t.id) > 0);
+  const stackBar = parts.map((t, i) => `<i style="flex:${nodeTotal(t.id)};background:${GREYS[i % GREYS.length]}"></i>`).join("");
+  const legend = parts.map((t, i) => {
+    const v = nodeTotal(t.id);
+    return `<tr><td><span class="sw" style="background:${GREYS[i % GREYS.length]}"></span></td><td>${esc(nodeOz(t))}</td><td>${esc(nodeName(t))}</td><td class="r">${fmtMoney(v)}</td><td class="r">${pct(v)}</td></tr>`;
+  }).join("");
+
+  return `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
+<title>${esc(pr.Projektnummer)}_Kostenschaetzung ${esc(lvName(l))}</title>
+<style>
+  /* Satzspiegel nach der Briefvorlage: 20 mm links/rechts, Logo rechtsbündig 16 mm über dem unteren Rand */
+  @page { size: A4; margin: 16mm 20mm 28mm 20mm;
+    @bottom-right { content: element(logo); vertical-align: bottom; text-align: right; padding-bottom: 16.35mm; width: 100mm; } }
+  .logo-run { position: running(logo); text-align: right; line-height: 0; }
+  .logo-run img { max-height: 11mm; max-width: 80mm; display: inline-block; }
+  * { box-sizing: border-box; }
+  body { font: 9pt/1.4 Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+  .kind { font-size: 7.5pt; letter-spacing: .18em; text-transform: uppercase; color: #111; font-weight: bold; }
+  h1 { font-size: 20pt; margin: 1.5mm 0 1mm; letter-spacing: -.01em; font-weight: bold; }
+  .sub { color: #555; font-size: 10pt; }
+  .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; margin: 7mm 0 7mm; padding: 3mm 0; border-top: 1.2pt solid #111; border-bottom: .4pt solid #111; }
+  .meta span { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .1em; color: #666; margin-bottom: .6mm; }
+  .dist { margin-bottom: 5mm; break-inside: avoid; }
+  .stackbar { display: flex; height: 7mm; gap: .6mm; margin: 1.5mm 0 3mm; }
+  .stackbar i { display: block; min-width: .8mm; }
+  table.leg { width: 100%; border-collapse: collapse; font-size: 8.5pt; table-layout: fixed; align-self: start; }
+  table.leg td { padding: 1mm 0; border-bottom: .3pt solid #ddd; vertical-align: middle; }
+  table.leg td { vertical-align: top; width: auto !important; padding-left: 0 !important; } table.leg td.r { white-space: nowrap; }
+  table.leg td:nth-child(2), table.leg td:nth-child(5) { color: #666; font-size: 8pt; }
+  .sw { display: inline-block; width: 3mm; height: 3mm; margin-top: .6mm; }
+  .hero { display: flex; justify-content: flex-end; gap: 8mm; margin-bottom: 8mm; break-inside: avoid; }
+  .total { border-top: 1.2pt solid #111; padding-top: 1mm; }
+  .total div { display: flex; justify-content: space-between; gap: 4mm; padding: 1.1mm 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .total .n { font-weight: bold; }
+  .total .b { border-top: .4pt solid #111; border-bottom: 2.2pt double #111; margin-top: 1mm; padding: 2mm 0; font-size: 11.5pt; font-weight: bold; }
+  .basis { border-top: .4pt solid #111; padding: 2mm 0 0; margin: 0 0 6mm; color: #222; break-inside: avoid; }
+  .lbl { font-size: 7pt; text-transform: uppercase; letter-spacing: .1em; color: #777; display: block; margin-bottom: 1mm; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { font-size: 7pt; text-transform: uppercase; letter-spacing: .06em; color: #777; font-weight: normal; text-align: left; padding: 0 0 1.5mm; border-bottom: .8pt solid #111; }
+  th.r, td.r { text-align: right; }
+  td { padding: 1.3mm 0; vertical-align: top; font-variant-numeric: tabular-nums; }
+  td:first-child { width: 20mm; color: #777; font-size: 8pt; }
+  td:nth-child(3) { width: 18mm; } td:nth-child(4), th:nth-child(4) { width: 10mm; padding-left: 2mm; } td:nth-child(5) { width: 20mm; } td:nth-child(6) { width: 24mm; } td:nth-child(7) { width: 13mm; }
+  tr.pos td { border-bottom: .3pt solid #e6e6e6; }
+  tr.opt td { color: #888; } tr.opt i { font-size: 7.5pt; }
+  tr.t td { font-weight: bold; padding-top: 4mm; border-bottom: .5pt solid #999; color: #111; }
+  tr.t1 td { font-size: 10pt; } tr.t1 td:first-child { font-size: 9pt; }
+  tr.t2 td, tr.t3 td { padding-top: 2.5mm; font-size: 9pt; border-bottom-color: #ccc; }
+  tr.t td.p { color: #111; font-size: 8pt; font-weight: normal; }
+  tr.note td { color: #555; font-size: 8pt; padding: 1mm 0 1.5mm; }
+  tr { break-inside: avoid; }
+  tr.t { break-after: avoid; }
+  .tag { font-size: 6.5pt; border: .5pt solid #aaa; padding: 0 1mm; color: #666; }
+  .after { margin-top: 8mm; break-inside: avoid; }
+  .hint { margin-top: 6mm; font-size: 7.5pt; color: #777; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; margin-top: 16mm; break-inside: avoid; }
+  .sign div { border-top: .6pt solid #333; padding-top: 1mm; font-size: 7.5pt; color: #555; }
+</style></head><body>
+  ${settings.logo ? `<div class="logo-run"><img src="${settings.logo}" alt=""></div>` : ""}
+  <div class="kind">Kostenschätzung</div>
+  <h1>${esc(pr.Projektname || "")}</h1>
+  ${(() => {
+    // Untertitel nur, wenn er etwas anderes sagt als die Überschrift „Kostenschätzung“
+    const sub = [lvName(l), l.Gewerk].map(x => String(x || "").trim()).filter(x => x && !/^kostensch(ä|ae)tzung$/i.test(x));
+    return sub.length ? `<div class="sub">${sub.map(esc).join(" · ")}</div>` : "";
+  })()}
+  <div class="meta">
+    <div><span>Projekt</span>${esc(pr.Projektnummer || "–")}</div>
+    <div><span>Bauherr</span>${esc(pr.Bauherr || "–")}</div>
+    <div><span>Aufgestellt</span>${esc(planer || "–")}<br>${now.toLocaleDateString("de-DE")}</div>
+  </div>
+  <div class="dist">
+    <span class="lbl">Verteilung der Kosten (netto)</span>
+    <div class="stackbar">${stackBar}</div>
+    <table class="leg"><colgroup><col style="width:6mm"><col style="width:10mm"><col><col style="width:30mm"><col style="width:16mm"></colgroup><tbody>${legend}</tbody></table>
+  </div>
+  <div class="hero">
+    <div class="total" style="width:74mm">
+      <div class="n"><span>Summe netto</span><span>${fmtMoney(net)} €</span></div>
+      <div><span>zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.</span><span>${fmtMoney(vat)} €</span></div>
+      <div class="b"><span>Summe brutto</span><span>${fmtMoney(net + vat)} €</span></div>
+    </div>
+  </div>
+  ${textOn(l, "Vorbemerkung") ? `<div class="basis"><span class="lbl">Grundlagen und Annahmen</span>${br(l.Vorbemerkung)}</div>` : ""}
+  <table>
+    <thead><tr><th>Nr.</th><th>Bezeichnung</th><th class="r">Menge</th><th>ME</th><th class="r">Kennwert €</th><th class="r">Betrag €</th><th class="r">Anteil</th></tr></thead>
+    <tbody>${rows.join("")}</tbody>
+  </table>
+  <div class="after">
+    <div class="total" style="width:74mm;margin-left:auto">
+      <div class="n"><span>Summe netto</span><span>${fmtMoney(net)} €</span></div>
+      <div><span>zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.</span><span>${fmtMoney(vat)} €</span></div>
+      <div class="b"><span>Summe brutto</span><span>${fmtMoney(net + vat)} €</span></div>
+    </div>
+    ${textOn(l, "Nachbemerkung") ? `<div class="basis" style="margin-top:8mm"><span class="lbl">Hinweise</span>${br(l.Nachbemerkung)}</div>` : ""}
+    <div class="hint">Kostenschätzung auf Grundlage des aktuellen Planungsstands. Eventual-, Bedarfs- und Alternativpositionen sind nicht in den Summen enthalten.</div>
+  </div>
+<script>
+  let printed = false;
+  const go = () => { if (!printed) { printed = true; setTimeout(() => window.print(), 300); } };
+  window.PagedConfig = { auto: true, after: go };
+  setTimeout(() => { if (!window.PagedPolyfill) go(); }, 6000);
+<\/script>
+<script src="${pagedSrc}" onerror="go()"><\/script>
+</body></html>`;
+}
+
+// ------------------------------------------------------
+// VORLAGEN (DIN 276 Kostenschätzung, DIN 277 Flächen)
+// ------------------------------------------------------
+const TEMPLATES = {
+  din276: {
+    name: "Kostenschätzung nach DIN 276",
+    hint: "Kostengruppen 100–800 als Titel, 2. Ebene als Positionen (1 psch, Betrag eintragen)",
+    titles: [
+      ["KG 100 Grundstück", ["110 Grundstückswert", "120 Grundstücksnebenkosten", "130 Rechte Dritter"]],
+      ["KG 200 Vorbereitende Maßnahmen", ["210 Herrichten", "220 Öffentliche Erschließung", "230 Nichtöffentliche Erschließung", "240 Ausgleichsmaßnahmen und -abgaben", "250 Übergangsmaßnahmen"]],
+      ["KG 300 Bauwerk – Baukonstruktionen", ["310 Baugrube / Erdbau", "320 Gründung, Unterbau", "330 Außenwände / Vertikale Baukonstruktionen, außen", "340 Innenwände / Vertikale Baukonstruktionen, innen", "350 Decken / Horizontale Baukonstruktionen", "360 Dächer", "370 Infrastrukturanlagen", "380 Baukonstruktive Einbauten", "390 Sonstige Maßnahmen für Baukonstruktionen"]],
+      ["KG 400 Bauwerk – Technische Anlagen", ["410 Abwasser-, Wasser-, Gasanlagen", "420 Wärmeversorgungsanlagen", "430 Raumlufttechnische Anlagen", "440 Elektrische Anlagen", "450 Kommunikations-, sicherheits- und informationstechnische Anlagen", "460 Förderanlagen", "470 Nutzungsspezifische und verfahrenstechnische Anlagen", "480 Gebäude- und Anlagenautomation", "490 Sonstige Maßnahmen für technische Anlagen"]],
+      ["KG 500 Außenanlagen und Freiflächen", ["510 Erdbau", "520 Gründung, Unterbau", "530 Oberbau, Deckschichten", "540 Baukonstruktionen", "550 Technische Anlagen", "560 Einbauten in Außenanlagen und Freiflächen", "570 Vegetationsflächen", "580 Wasserflächen", "590 Sonstige Maßnahmen für Außenanlagen und Freiflächen"]],
+      ["KG 600 Ausstattung und Kunstwerke", ["610 Allgemeine Ausstattung", "620 Besondere Ausstattung", "630 Informationstechnische Ausstattung", "640 Künstlerische Ausstattung", "690 Sonstige Ausstattung"]],
+      ["KG 700 Baunebenkosten", ["710 Bauherrenaufgaben", "720 Vorbereitung der Objektplanung", "730 Objektplanung", "740 Fachplanung", "750 Künstlerische Leistungen", "760 Allgemeine Baunebenkosten", "790 Sonstige Baunebenkosten"]],
+      ["KG 800 Finanzierung", ["810 Finanzierungsnebenkosten", "820 Fremdkapitalzinsen", "830 Eigenkapitalzinsen", "840 Bürgschaften", "890 Sonstige Finanzierungskosten"]]
+    ].map(([t, ps]) => ({ name: t, positions: ps.map(k => ({ Kurztext: k, Menge: 1, Einheit: "psch" })) }))
+  },
+  din277: {
+    name: "Flächen nach DIN 277",
+    hint: "Grundflächen und Rauminhalt; Menge in m² bzw. m³, Kennwert in €/m² bzw. €/m³",
+    titles: [
+      { name: "Nutzungsfläche (NUF)", positions: ["NUF 1 Wohnen und Aufenthalt", "NUF 2 Büroarbeit", "NUF 3 Produktion, Hand- und Maschinenarbeit, Forschung und Entwicklung", "NUF 4 Lagern, Verteilen und Verkaufen", "NUF 5 Bildung, Unterricht und Kultur", "NUF 6 Heilen und Pflegen", "NUF 7 Sonstige Nutzungen"].map(k => ({ Kurztext: k, Einheit: "m2" })) },
+      { name: "Technikfläche (TF)", positions: [{ Kurztext: "TF 8 Technische Anlagen", Einheit: "m2" }] },
+      { name: "Verkehrsfläche (VF)", positions: [{ Kurztext: "VF 9 Verkehrserschließung und -sicherung", Einheit: "m2" }] },
+      { name: "Konstruktions-Grundfläche (KGF)", positions: [{ Kurztext: "KGF Konstruktions-Grundfläche", Einheit: "m2" }] },
+      { name: "Rauminhalt", positions: [{ Kurztext: "BRI Brutto-Rauminhalt", Einheit: "m3", Positionstyp: "Bedarfsposition", Langtext: "Nur zur Information (als Bedarfsposition nicht in der Summe). Für eine Kostenschätzung über den Rauminhalt die Positionsart auf Normal stellen und die Flächen oben als Bedarfspositionen führen." }] }
+    ]
+  }
+};
+
+async function insertTemplate(key) {
+  const tpl = TEMPLATES[key];
+  if (!tpl || !sel.lvId) return;
+  await flushSave();
+  const start = childrenOf(null).length;
+  const res = await apply(tpl.titles.map((t, i) => ["AddRecord", T.titles, null, {
+    Titelbezeichnung: t.name, Leistungsverzeichnis: sel.lvId, Sortierung: start + i + 1, Titelnummer: pad(start + i + 1, 2)
+  }]), { refresh: false });
+  const ids = (res?.retValues ?? (Array.isArray(res) ? res : [])).map(refId);
+  const posActions = [];
+  tpl.titles.forEach((t, i) => t.positions.forEach((p, j) => posActions.push(["AddRecord", T.positions, null, {
+    Titel: ids[i], Sortierung: j + 1, Kurztext: p.Kurztext, Langtext: p.Langtext || "", Menge: p.Menge ?? 0, Einheit: p.Einheit || "",
+    Einheitspreis: 0, Positionstyp: p.Positionstyp || "Normal", Aktiv: true
+  }])));
+  await apply(posActions);
+  await apply(renumberActions());
+  sel.nodeId = ids[0] ?? sel.nodeId;
+  renderAll();
+  toast(`Vorlage „${tpl.name}“ eingefügt. Mengen und Kennwerte eintragen, nicht benötigte Positionen löschen oder inaktiv schalten.`);
+}
+
+// ------------------------------------------------------
+// EXPORT: Excel / LibreOffice Calc (.xlsx) und CSV
+// ------------------------------------------------------
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+const crc32 = bytes => {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+};
+
+// Minimaler ZIP-Packer (ohne Kompression) – reicht für .xlsx
+function makeZip(files) {
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  const u16 = v => [v & 0xFF, (v >>> 8) & 0xFF];
+  const u32 = v => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+  for (const [name, text] of files) {
+    const nameB = enc.encode(name), data = enc.encode(text), crc = crc32(data);
+    const head = [...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21),
+      ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(nameB.length), ...u16(0)];
+    parts.push(new Uint8Array(head), nameB, data);
+    central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21),
+      ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(nameB.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+      ...u32(0), ...u32(offset)]), nameB);
+    offset += head.length + nameB.length + data.length;
+  }
+  const cdSize = central.reduce((s, b) => s + b.length, 0);
+  const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length),
+    ...u32(cdSize), ...u32(offset), ...u16(0)]);
+  return new Blob([...parts, ...central, end], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+function downloadBlob(blob, name) {
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+const exportName = ext => {
+  const l = lv(), pr = project();
+  return `${pr.Projektnummer || "LV"}_LV${lvNr(l)}_${lvName(l)}`.normalize("NFKD").replace(/[^\w.-]+/g, "_") + ext;
+};
+
+// Zellen-Stile (Index in cellXfs)
+const XS = { text: 0, bold: 1, qty: 2, money: 3, moneyB: 4, wrap: 5, head: 6, title: 7, note: 8, h1: 9, sub: 10, moneySub: 11, big: 12, center: 13 };
+const XLSX_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="#,##0.00"/></numFmts>
+<fonts count="5">
+<font><sz val="10"/><name val="Arial"/></font>
+<font><b/><sz val="10"/><name val="Arial"/></font>
+<font><i/><sz val="9"/><color rgb="FF777777"/><name val="Arial"/></font>
+<font><b/><sz val="13"/><name val="Arial"/></font>
+<font><sz val="9"/><color rgb="FF666666"/><name val="Arial"/></font>
+</fonts>
+<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFF1F1F3"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="3"><border/><border><bottom style="thin"><color rgb="FF999999"/></bottom></border><border><top style="thin"><color rgb="FF999999"/></top></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="14">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top"/></xf>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top"/></xf>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>
+<xf numFmtId="165" fontId="1" fillId="0" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" horizontal="right"/></xf>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="165" fontId="1" fillId="0" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
+<xf numFmtId="165" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" horizontal="center"/></xf>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
+const xmlEsc = v => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+  .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+const colName = i => String.fromCharCode(65 + i);
+
+// Baut ein Tabellenblatt aus Zeilen. Zelle: {v, s, f} – v Zahl oder Text, f Formel (ohne „=“)
+function sheetXml(rows, { cols, freeze, landscape } = {}) {
+  const out = rows.map((cells, r) => {
+    const cs = (cells || []).map((c, i) => {
+      if (c == null) return "";
+      const ref = colName(i) + (r + 1);
+      const cell = typeof c === "object" ? c : { v: c };
+      const s = cell.s ?? 0;
+      if (cell.f) return `<c r="${ref}" s="${s}"><f>${xmlEsc(cell.f)}</f><v>${Number(cell.v) || 0}</v></c>`;
+      if (typeof cell.v === "number" && isFinite(cell.v)) return `<c r="${ref}" s="${s}"><v>${cell.v}</v></c>`;
+      if (cell.v == null || cell.v === "") return s ? `<c r="${ref}" s="${s}"/>` : "";
+      return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(cell.v)}</t></is></c>`;
+    }).join("");
+    return `<row r="${r + 1}">${cs}</row>`;
+  }).join("");
+  const pane = freeze ? `<pane ySplit="${freeze}" topLeftCell="A${freeze + 1}" activePane="bottomLeft" state="frozen"/>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews>
+<sheetFormatPr defaultRowHeight="13"/>
+<cols>${cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>
+<sheetData>${out}</sheetData>
+<pageMargins left="0.6" right="0.4" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
+<pageSetup paperSize="9" orientation="${landscape ? "landscape" : "portrait"}" fitToWidth="1" fitToHeight="0"/>
+<headerFooter><oddFooter>&amp;L&amp;8 ${xmlEsc(exportName("").replace(/_/g, " "))}&amp;C&amp;8 Druck: &amp;D&amp;R&amp;8 Seite &amp;P von &amp;N</oddFooter></headerFooter>
+</worksheet>`;
+}
+
+function buildWorkbook(sheets) {
+  const files = [
+    ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("\n")}
+</Types>`],
+    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`],
+    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>${sheets.map((s, i) => `<sheet name="${xmlEsc(s.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets>
+<calcPr calcId="191029" fullCalcOnLoad="1"/>
+</workbook>`],
+    ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("\n")}
+<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`],
+    ["xl/styles.xml", XLSX_STYLES],
+    ...sheets.map((s, i) => [`xl/worksheets/sheet${i + 1}.xml`, s.xml])
+  ];
+  return makeZip(files);
+}
+
+// withPrices = false: Bieterversion, EP leer, GB rechnet sich beim Eintragen der EP von selbst
+function exportXlsx(withPrices = true) {
+  const l = lv(), pr = project();
+  if (!l || !pr) return toast("Bitte zuerst Projekt und LV wählen.");
+  const rows = [];
+  const add = cells => { rows.push(cells); return rows.length; }; // gibt Excel-Zeilennummer zurück
+  add([{ v: `${pr.Projektnummer || ""} ${pr.Projektname || ""}`.trim(), s: XS.h1 }]);
+  add([{ v: `LV ${lvNr(l)} ${lvName(l)}`, s: XS.bold }]);
+  add([{ v: `${withPrices ? "Kostenvoranschlag" : "Ausschreibung (Preise vom Bieter einzutragen)"} · Stand ${new Date().toLocaleDateString("de-DE")}${pr.Bauherr ? " · Auftraggeber: " + pr.Bauherr : ""}`, s: XS.sub }]);
+  add([]);
+  const H = XS.head;
+  add([{ v: "OZ", s: H }, { v: "Kurztext", s: H }, { v: "Langtext", s: H }, { v: "Menge", s: H }, { v: "ME", s: H }, { v: "EP in €", s: H }, { v: "GB in €", s: H }, { v: "Art", s: H }]);
+  const sumRow = new Map(); // Titel-ID -> Excel-Zeile seiner Summe
+
+  const draw = parentId => {
+    for (const t of childrenOf(parentId)) {
+      add([]);
+      add([{ v: nodeOz(t), s: XS.title }, { v: nodeName(t), s: XS.title }]);
+      const refs = [];
+      for (const p of positionsOf(t.id).filter(x => isActive(x.Aktiv))) {
+        const k = typeKey(p);
+        const r = rows.length + 1;
+        const menge = num(p.Menge), ep = withPrices ? num(p.Einheitspreis) : null;
+        add([
+          { v: p.Positionsnummer },
+          { v: p.Kurztext || "", s: XS.wrap },
+          { v: p.Langtext || "", s: XS.wrap },
+          { v: menge, s: XS.qty },
+          { v: p.Einheit || "", s: XS.center },
+          ep == null ? { v: "", s: XS.money } : { v: ep, s: XS.money },
+          k === "normal" ? { f: `ROUND(D${r}*F${r},2)`, v: withPrices ? lineTotal(p) : 0, s: XS.money } : { v: "nur EP", s: XS.note },
+          { v: k === "normal" ? "" : TYPE_LABEL[k] }
+        ]);
+        if (k === "normal") refs.push(`G${r}`);
+      }
+      draw(t.id);
+      for (const c of childrenOf(t.id)) if (sumRow.has(c.id)) refs.push(sumRow.get(c.id));
+      if (redundantSum(t)) { sumRow.set(t.id, refs.join("+") || "0"); continue; } // wie im Druck: doppelte Summe weglassen
+      const r = add([null, { v: `Summe ${nodeOz(t)} ${nodeName(t)}`, s: XS.bold }, null, null, null, null,
+        { f: refs.length ? refs.join("+") : "0", v: withPrices ? nodeTotal(t.id) : 0, s: level(t) === 1 ? XS.moneyB : XS.moneySub }]);
+      sumRow.set(t.id, `G${r}`);
+    }
+  };
+  draw(null);
+
+  // Zusammenstellung
+  add([]);
+  add([]);
+  add([null, { v: "Zusammenstellung", s: XS.title }]);
+  const top = childrenOf(null);
+  const recapRefs = [];
+  for (const t of top) {
+    const r = add([{ v: nodeOz(t) }, { v: nodeName(t) }, null, null, null, null,
+      { f: sumRow.get(t.id), v: withPrices ? nodeTotal(t.id) : 0, s: XS.money }]);
+    recapRefs.push(`G${r}`);
+  }
+  const net = withPrices ? lvTotal() : 0, rate = num(settings.mwst) / 100;
+  const rn = add([null, { v: "LV-Summe netto", s: XS.bold }, null, null, null, null, { f: recapRefs.length ? `SUM(${recapRefs[0]}:${recapRefs[recapRefs.length - 1]})` : "0", v: net, s: XS.moneyB }]);
+  const rv = add([null, { v: `zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.` }, null, null, null, null, { f: `ROUND(G${rn}*${rate},2)`, v: round2(net * rate), s: XS.money }]);
+  add([null, { v: "LV-Summe brutto", s: XS.bold }, null, null, null, null, { f: `G${rn}+G${rv}`, v: round2(net + net * rate), s: XS.moneyB }]);
+
+  const xml = sheetXml(rows, { cols: [13, 34, 64, 11, 7, 12, 14, 11], freeze: 5, landscape: true });
+  const name = exportName(withPrices ? ".xlsx" : "_Bieter.xlsx");
+  downloadBlob(buildWorkbook([{ name: `LV ${lvNr(l)}`, xml }]), name);
+  toast(`„${name}“ heruntergeladen. Öffnet in Excel und LibreOffice Calc.`);
+}
+
+// CSV: flache Positionsliste, Semikolon, Dezimalkomma, UTF-8 mit BOM (für deutsches Excel)
+function exportCsv() {
+  const l = lv(), pr = project();
+  if (!l || !pr) return toast("Bitte zuerst Projekt und LV wählen.");
+  const q = v => {
+    const s = String(v ?? "");
+    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const dec = (v, d) => num(v).toFixed(d).replace(".", ",");
+  const lines = [["OZ", "Titel", "Kurztext", "Langtext", "Menge", "Einheit", "EP", "GB", "Art", "Aktiv"].join(";")];
+  for (const t of walk()) {
+    for (const p of positionsOf(t.id)) {
+      const k = typeKey(p);
+      lines.push([p.Positionsnummer, `${nodeOz(t)} ${nodeName(t)}`, p.Kurztext, p.Langtext,
+        dec(p.Menge, 3), p.Einheit, dec(p.Einheitspreis, 2), k === "normal" ? dec(lineTotal(p), 2) : "",
+        k === "normal" ? "Normal" : TYPE_LABEL[k], isActive(p.Aktiv) ? "ja" : "nein"].map(q).join(";"));
+    }
+  }
+  const name = exportName(".csv");
+  downloadBlob(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), name);
+  toast(`„${name}“ heruntergeladen.`);
 }
 
 // ------------------------------------------------------
@@ -1657,6 +2532,79 @@ function toast(msg) {
 // ------------------------------------------------------
 // EVENTS
 // ------------------------------------------------------
+// Drag & Drop in der Positionsliste
+let drag = null;
+function bindDragDrop() {
+  const list = $("list");
+  const clear = () => list.querySelectorAll(".drop-before,.drop-after,.drop-into").forEach(x => x.classList.remove("drop-before", "drop-after", "drop-into"));
+  const spot = e => {
+    if (!drag) return null;
+    const row = e.target.closest(".row[data-pos]");
+    const g = e.target.closest(".g[data-node]");
+    if (drag.kind === "pos") {
+      if (row) {
+        const r = row.getBoundingClientRect();
+        return { el: row, cls: e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after" };
+      }
+      const add = e.target.closest(".row.add[data-add-pos]");
+      if (add) return { el: add, cls: "drop-into", node: Number(add.dataset.addPos) };
+      if (g) return { el: g, cls: "drop-into" };
+      return null;
+    }
+    if (drag.kind === "node" && g && Number(g.dataset.node) !== drag.id) {
+      const a = title(drag.id), b = title(Number(g.dataset.node));
+      if ((parentOf(a) || null) !== (parentOf(b) || null)) return null;
+      const r = g.getBoundingClientRect();
+      return { el: g, cls: e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after" };
+    }
+    return null;
+  };
+  list.addEventListener("dragstart", e => {
+    const row = e.target.closest?.(".row[data-pos]");
+    const g = e.target.closest?.(".g[data-node]");
+    if (row) drag = { kind: "pos", id: Number(row.dataset.pos) };
+    else if (g) drag = { kind: "node", id: Number(g.dataset.node) };
+    else return;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(drag.id));
+    (row || g).classList.add("dragging");
+    list.classList.add("is-dragging");
+  });
+  list.addEventListener("dragover", e => {
+    const s = spot(e);
+    clear();
+    if (!s) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    s.el.classList.add(s.cls);
+  });
+  list.addEventListener("dragleave", e => { if (!list.contains(e.relatedTarget)) clear(); });
+  list.addEventListener("drop", e => {
+    const s = spot(e);
+    clear();
+    if (!s) return;
+    e.preventDefault();
+    const d = drag;
+    drag = null;
+    if (d.kind === "node") return moveTitleTo(d.id, Number(s.el.dataset.node), s.cls === "drop-after");
+    if (s.el.matches(".row[data-pos]")) {
+      const target = position(Number(s.el.dataset.pos));
+      const nodeId = refId(target.Titel);
+      const others = positionsOf(nodeId).filter(x => x.id !== d.id);
+      const idx = others.findIndex(x => x.id === target.id) + (s.cls === "drop-after" ? 1 : 0);
+      return movePositionTo(d.id, nodeId, idx);
+    }
+    const nodeId = s.node ?? Number(s.el.dataset.node);
+    return movePositionTo(d.id, nodeId, positionsOf(nodeId).filter(x => x.id !== d.id).length);
+  });
+  list.addEventListener("dragend", () => {
+    drag = null;
+    clear();
+    list.classList.remove("is-dragging");
+    list.querySelectorAll(".dragging").forEach(x => x.classList.remove("dragging"));
+  });
+}
+
 function bindEvents() {
   $("projectSelect").addEventListener("change", async e => {
     await flushSave();
@@ -1687,14 +2635,31 @@ function bindEvents() {
   $("settingsButton").addEventListener("click", openSettings);
   $("printMenuButton").addEventListener("click", e => {
     e.stopPropagation();
+    syncPrintStyle();
     $("printMenu").hidden = !$("printMenu").hidden;
   });
   $("printMenu").addEventListener("click", e => {
     const b = e.target.closest("[data-print]");
+    const st = e.target.closest("[data-pstyle]");
+    if (st) {
+      e.stopPropagation();
+      settings.printStyle = st.dataset.pstyle;
+      syncPrintStyle();
+      grist.widgetApi.setOptions(settings).catch(() => {});
+      return;
+    }
+    if (!b) return;
     $("printMenu").hidden = true;
-    if (b) printLV(b.dataset.print);
+    printLV(b.dataset.print);
   });
   $("exportTypstButton").addEventListener("click", () => { $("printMenu").hidden = true; exportTypst(); });
+  $("printMenu").addEventListener("click", e => {
+    const b = e.target.closest("[data-export]");
+    if (!b) return;
+    $("printMenu").hidden = true;
+    const k = b.dataset.export;
+    if (k === "xlsx") exportXlsx(true); else if (k === "xlsx-bieter") exportXlsx(false); else if (k === "csv") exportCsv();
+  });
   document.addEventListener("click", e => {
     if (!e.target.closest(".menu-wrap")) $("printMenu").hidden = true;
   });
@@ -1702,6 +2667,8 @@ function bindEvents() {
   // Dialoge
   $("settingsForm").addEventListener("submit", saveSettings);
   $("sCancel").addEventListener("click", () => $("settingsDialog").close());
+  $("sLogoFile").addEventListener("change", e => { readLogo(e.target.files[0]); e.target.value = ""; });
+  $("sLogoRemove").addEventListener("click", () => { pendingLogo = ""; showLogoPreview(); });
   $("titleForm").addEventListener("submit", saveTitleDialog);
   $("tCancel").addEventListener("click", () => $("titleDialog").close());
   $("tDelete").addEventListener("click", deleteTitle);
@@ -1710,7 +2677,15 @@ function bindEvents() {
   $("schemaButton").addEventListener("click", migrateSchema);
   $("quickStartForm").addEventListener("submit", saveQuickStart);
   $("qCancel").addEventListener("click", () => $("quickStartDialog").close());
-  $("qNewProject").addEventListener("change", e => { $("qProjectFields").hidden = !e.target.checked; });
+  $("qNewProject").addEventListener("change", syncQuickStart);
+  $("qWithLv").addEventListener("change", syncQuickStart);
+  $("qMode").addEventListener("click", e => {
+    const b = e.target.closest("[data-mode]");
+    if (!b || b.disabled) return;
+    $("qMode").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    $("qNewProject").checked = b.dataset.mode === "project";
+    syncQuickStart();
+  });
 
   // Suche
   $("search").addEventListener("input", e => {
@@ -1735,6 +2710,8 @@ function bindEvents() {
 
   // Klicks in Liste und Übersicht (gemeinsame Aktionen)
   const onAction = e => {
+    const tb = e.target.closest("[data-template]");
+    if (tb) { e.stopPropagation(); return insertTemplate(tb.dataset.template); }
     const b = e.target.closest("[data-toggle-active],[data-open-texts],[data-toggle],[data-move-node],[data-edit-node],[data-edit-lv],[data-add-sub],[data-add-pos],[data-move-pos],[data-select-node],#addTitleInline");
     if (b) {
       e.stopPropagation();
@@ -1762,6 +2739,8 @@ function bindEvents() {
     if (g) selectNode(Number(g.dataset.node));
   };
   $("list").addEventListener("click", onAction);
+  bindDragDrop();
+  bindProjects();
   $("summaryPanel").addEventListener("click", onAction);
   $("list").addEventListener("dblclick", e => {
     const g = e.target.closest(".g[data-node]");
