@@ -13,17 +13,57 @@ const T = {
   positions: "Positionen"
 };
 
-// Spalten, die das Widget braucht. Fehlen sie, bietet das Widget an, sie anzulegen.
-const SCHEMA = [
-  { table: T.titles, col: "Uebergeordnet", type: "Ref:Titel", label: "Übergeordnet",
-    why: "Untertitel (01.01)" },
-  { table: T.positions, col: "LV", type: "Ref:Leistungsverzeichnisse", label: "LV",
-    formula: "$Titel.Leistungsverzeichnis", why: "LV-Bezug für Filter in Grist" },
-  { table: T.lvs, col: "Vergabeverfahren", type: "Text", why: "Deckblatt" },
-  { table: T.lvs, col: "Angebotsfrist", type: "Text", why: "Deckblatt" },
-  { table: T.lvs, col: "Submission", type: "Text", why: "Deckblatt" },
-  { table: T.lvs, col: "Zuschlagsfrist", type: "Text", why: "Deckblatt" },
-  { table: T.lvs, col: "Ort_Angebotsabgabe", type: "Text", label: "Ort Angebotsabgabe", why: "Deckblatt" }
+// Vollständiges Datenmodell. Fehlende Tabellen und Spalten legt das Widget auf Knopfdruck an.
+const ch = list => JSON.stringify({ choices: list });
+const EUR = JSON.stringify({ decimals: 2, maxDecimals: 2, numMode: "currency", currency: "EUR" });
+const FULL_SCHEMA = [
+  { table: T.projects, cols: [
+    { id: "Projektnummer", type: "Text" },
+    { id: "Projektname", type: "Text" },
+    { id: "Bauherr", type: "Text" },
+    { id: "Strasse", type: "Text", label: "Straße" },
+    { id: "PLZ", type: "Text" },
+    { id: "Ort", type: "Text" },
+    { id: "Architekt", type: "Text" },
+    { id: "Projektstatus", type: "Choice", widgetOptions: ch(["Planung", "Ausschreibung", "Ausführung", "Abgeschlossen"]) }
+  ]},
+  { table: T.lvs, cols: [
+    { id: "LV_Nummer", type: "Text", label: "LV-Nummer" },
+    { id: "LV_Bezeichnung", type: "Text", label: "LV-Bezeichnung" },
+    { id: "Projekt", type: "Ref:Projekte", show: "Projektname" },
+    { id: "Gewerk", type: "Choice", widgetOptions: ch(["Rohbau", "Dach", "Fenster", "Trockenbau", "Estrich", "Fliesen", "Maler", "Elektro", "Sanitär", "Heizung"]) },
+    { id: "Bearbeitungsstand", type: "Choice", widgetOptions: ch(["Entwurf", "Prüfung", "Ausschreibung", "Beauftragt"]) },
+    { id: "Ausgabe_Datum", type: "Date", label: "Ausgabedatum" },
+    { id: "Abgabedatum", type: "Date" },
+    { id: "Vorbemerkung", type: "Text" },
+    { id: "Vergabeverfahren", type: "Text" },
+    { id: "Angebotsfrist", type: "Text" },
+    { id: "Submission", type: "Text" },
+    { id: "Zuschlagsfrist", type: "Text" },
+    { id: "Ort_Angebotsabgabe", type: "Text", label: "Ort Angebotsabgabe" }
+  ]},
+  { table: T.titles, cols: [
+    { id: "Titelnummer", type: "Text" },
+    { id: "Titelbezeichnung", type: "Text" },
+    { id: "Leistungsverzeichnis", type: "Ref:Leistungsverzeichnisse", show: "LV_Bezeichnung" },
+    { id: "Uebergeordnet", type: "Ref:Titel", label: "Übergeordnet", show: "Titelbezeichnung" },
+    { id: "Sortierung", type: "Numeric" },
+    { id: "Vorbemerkung", type: "Text" }
+  ]},
+  { table: T.positions, cols: [
+    { id: "Titel", type: "Ref:Titel", show: "Titelbezeichnung" },
+    { id: "Positionsnummer", type: "Text" },
+    { id: "Sortierung", type: "Numeric" },
+    { id: "Kurztext", type: "Text" },
+    { id: "Langtext", type: "Text", widgetOptions: JSON.stringify({ wrap: true }) },
+    { id: "Menge", type: "Numeric", widgetOptions: JSON.stringify({ decimals: 3, maxDecimals: 3 }) },
+    { id: "Einheit", type: "Choice", widgetOptions: ch(["m", "m2", "m3", "Stk.", "psch", "lfm", "kg", "t", "h", "Wo"]) },
+    { id: "Einheitspreis", type: "Numeric", widgetOptions: EUR },
+    { id: "Gesamtpreis", type: "Numeric", isFormula: true, formula: "ROUND($Menge * $Einheitspreis, 2)", widgetOptions: EUR },
+    { id: "Positionstyp", type: "Choice", widgetOptions: ch(["Normal", "Bedarfsposition", "Eventualposition", "Alternativposition"]) },
+    { id: "Aktiv", type: "Bool" },
+    { id: "LV", type: "Ref:Leistungsverzeichnisse", isFormula: true, formula: "$Titel.Leistungsverzeichnis", show: "LV_Bezeichnung" }
+  ]}
 ];
 
 const DEFAULT_SETTINGS = {
@@ -51,6 +91,7 @@ const sel = { projectId: null, lvId: null, nodeId: null, posId: null };
 let settings = { ...DEFAULT_SETTINGS };
 let choices = { ...DEFAULT_CHOICES };
 let missingSchema = [];
+let missingTables = [];
 let expanded = new Set();
 let view = "edit";
 let searchTerm = "";
@@ -209,19 +250,20 @@ function makePosOz(node, index) {
 // GRIST: LADEN / SPEICHERN
 // ------------------------------------------------------
 async function fetchAll() {
-  const [p, l, t, pos] = await Promise.all([
-    grist.docApi.fetchTable(T.projects),
-    grist.docApi.fetchTable(T.lvs),
-    grist.docApi.fetchTable(T.titles),
-    grist.docApi.fetchTable(T.positions)
-  ]);
+  const load = id => grist.docApi.fetchTable(id).catch(() => null);
+  const [p, l, t, pos] = await Promise.all([T.projects, T.lvs, T.titles, T.positions].map(load));
   db.projects = rows(p);
   db.lvs = rows(l);
   db.titles = rows(t);
   db.positions = rows(pos);
 
   const have = { [T.projects]: p, [T.lvs]: l, [T.titles]: t, [T.positions]: pos };
-  missingSchema = SCHEMA.filter(s => !(s.col in have[s.table]));
+  missingTables = FULL_SCHEMA.filter(d => !have[d.table]).map(d => d.table);
+  missingSchema = [];
+  for (const d of FULL_SCHEMA) {
+    if (!have[d.table]) continue;
+    for (const c of d.cols) if (!(c.id in have[d.table])) missingSchema.push({ table: d.table, ...c });
+  }
 }
 
 async function loadChoices() {
@@ -396,11 +438,21 @@ function renderHeader() {
 
 function renderSchemaBanner() {
   const b = $("schemaBanner");
-  b.hidden = !missingSchema.length;
-  if (missingSchema.length) {
+  const n = missingTables.length + missingSchema.length;
+  b.hidden = !n;
+  if (!n) return;
+  if (missingTables.length === FULL_SCHEMA.length) {
+    $("schemaBannerTitle").textContent = "Ersteinrichtung";
     $("schemaBannerText").textContent =
-      `Für ${[...new Set(missingSchema.map(s => s.why))].join(", ")} fehlen ${missingSchema.length} Spalten: ` +
-      missingSchema.map(s => `${s.table}.${s.col}`).join(", ");
+      "Dieses Dokument enthält noch keine AVA-Tabellen. Ein Klick legt Projekte, Leistungsverzeichnisse, Titel und Positionen an.";
+    $("schemaButton").textContent = "Einrichten";
+  } else {
+    $("schemaBannerTitle").textContent = "Datenmodell erweitern";
+    $("schemaBannerText").textContent = "Es fehlen: " + [
+      ...missingTables.map(t => `Tabelle ${t}`),
+      ...missingSchema.map(s => `${s.table}.${s.id}`)
+    ].join(", ");
+    $("schemaButton").textContent = "Jetzt anlegen";
   }
 }
 
@@ -764,7 +816,7 @@ async function saveTitleDialog(ev) {
     Sortierung: sibs.length + 1,
     Titelnummer: pad(sibs.length + 1, 2)
   };
-  if (!missingSchema.some(s => s.col === "Uebergeordnet")) fields.Uebergeordnet = editingTitleParent || 0;
+  if (!missingSchema.some(s => s.id === "Uebergeordnet")) fields.Uebergeordnet = editingTitleParent || 0;
   else if (editingTitleParent) {
     toast("Für Untertitel bitte zuerst das Datenmodell erweitern (gelber Hinweis oben).");
     return;
@@ -826,20 +878,107 @@ async function moveTitle(id, dir) {
 // ------------------------------------------------------
 // DATENMODELL ERWEITERN
 // ------------------------------------------------------
+const colInfo = c => ({
+  type: c.type,
+  isFormula: !!c.isFormula,
+  formula: c.formula || "",
+  label: c.label || c.id,
+  ...(c.widgetOptions ? { widgetOptions: c.widgetOptions } : {})
+});
+
 async function migrateSchema() {
-  if (!missingSchema.length) return;
-  const list = missingSchema.map(s => `• ${s.table}.${s.col} (${s.type})`).join("\n");
-  if (!confirm(`Folgende Spalten werden in Grist angelegt:\n\n${list}\n\nAußerdem wird „Gesamtpreis“ auf 2 Nachkommastellen gerundet.\nFortfahren?`)) return;
-  const actions = missingSchema.map(s => ["AddColumn", s.table, s.col, {
-    type: s.type,
-    isFormula: !!s.formula,
-    formula: s.formula || "",
-    label: s.label || s.col
-  }]);
-  actions.push(["ModifyColumn", T.positions, "Gesamtpreis", { formula: "ROUND($Menge * $Einheitspreis, 2)" }]);
+  const setup = missingTables.length === FULL_SCHEMA.length;
+  const lines = [
+    ...missingTables.map(t => `• Tabelle ${t}`),
+    ...missingSchema.map(s => `• Spalte ${s.table}.${s.id} (${s.type})`)
+  ];
+  if (!lines.length) return;
+  const roundFix = !missingTables.includes(T.positions) && !missingSchema.some(s => s.id === "Gesamtpreis");
+  const extra = roundFix ? "\n\nAußerdem wird „Gesamtpreis“ auf 2 Nachkommastellen gerundet." : "";
+  if (!confirm(`Folgendes wird in Grist angelegt:\n\n${lines.join("\n")}${extra}\n\nFortfahren?`)) return;
+
+  // Erst Tabellen mit einfachen Spalten, danach Referenz- und Formelspalten
+  const actions = [];
+  const later = [];
+  for (const d of FULL_SCHEMA) {
+    if (!missingTables.includes(d.table)) continue;
+    const plain = d.cols.filter(c => !c.type.startsWith("Ref:") && !c.isFormula);
+    actions.push(["AddTable", d.table, plain.map(c => ({ id: c.id, ...colInfo(c) }))]);
+    d.cols.filter(c => c.type.startsWith("Ref:") || c.isFormula).forEach(c => later.push({ table: d.table, ...c }));
+  }
+  const added = [...later, ...missingSchema];
+  for (const c of added) actions.push(["AddColumn", c.table, c.id, colInfo(c)]);
+  if (roundFix) actions.push(["ModifyColumn", T.positions, "Gesamtpreis", { formula: "ROUND($Menge * $Einheitspreis, 2)" }]);
+
   await apply(actions);
-  toast("Datenmodell erweitert. Untertitel sind jetzt möglich.");
+  await setRefDisplay(added.filter(c => c.show));
+  await fetchAll();
+  toast(setup ? "Tabellen angelegt. Jetzt Projekt und LV anlegen." : "Datenmodell erweitert.");
+  validateSelection();
   renderAll();
+  if (setup) openQuickStart();
+}
+
+// Referenzspalten sollen Namen statt Zeilennummern zeigen (wie „Spalte anzeigen“ in Grist)
+async function setRefDisplay(refCols) {
+  if (!refCols.length) return;
+  try {
+    const [tables, cols] = await Promise.all([
+      grist.docApi.fetchTable("_grist_Tables"),
+      grist.docApi.fetchTable("_grist_Tables_column")
+    ]);
+    const tRef = {};
+    rows(tables).forEach(t => { tRef[t.tableId] = t.id; });
+    const colRows = rows(cols);
+    const colRef = (table, colId) => colRows.find(c => c.parentId === tRef[table] && c.colId === colId)?.id;
+    const actions = [];
+    for (const c of refCols) {
+      const ref = colRef(c.table, c.id);
+      const vis = colRef(c.type.slice(4), c.show);
+      if (!ref || !vis) continue;
+      actions.push(["ModifyColumn", c.table, c.id, { visibleCol: vis }]);
+      actions.push(["SetDisplayFormula", c.table, null, ref, `$${c.id}.${c.show}`]);
+    }
+    if (actions.length) await grist.docApi.applyUserActions(actions);
+  } catch (e) {
+    console.info("Anzeigespalten für Referenzen bitte in Grist manuell setzen.", e);
+  }
+}
+
+// Projekt + LV in einem Dialog anlegen (nach der Ersteinrichtung oder über „+ LV“)
+function openQuickStart() {
+  const pr = project();
+  $("qNewProject").checked = !pr;
+  $("qNewProject").disabled = !pr;
+  $("qProjectFields").hidden = !!pr;
+  $("qProjectHint").textContent = pr ? `Neues LV in Projekt ${pr.Projektnummer || ""} ${pr.Projektname || ""}` : "";
+  $("quickStartForm").reset();
+  $("qNewProject").checked = !pr;
+  $("quickStartDialog").showModal();
+  (pr ? $("qLvNummer") : $("qProjektnummer")).focus();
+}
+
+async function saveQuickStart(ev) {
+  ev.preventDefault();
+  const v = id => $(id).value.trim();
+  $("quickStartDialog").close();
+  let pid = sel.projectId;
+  if ($("qNewProject").checked || !pid) {
+    const res = await apply([["AddRecord", T.projects, null, {
+      Projektnummer: v("qProjektnummer"), Projektname: v("qProjektname"), Bauherr: v("qBauherr"),
+      Strasse: v("qStrasse"), PLZ: v("qPLZ"), Ort: v("qOrt"), Projektstatus: "Planung"
+    }]]);
+    pid = newRowId(res);
+  }
+  const res2 = await apply([["AddRecord", T.lvs, null, {
+    Projekt: pid, LV_Nummer: v("qLvNummer"), LV_Bezeichnung: v("qLvName"), Gewerk: v("qGewerk"), Bearbeitungsstand: "Entwurf"
+  }]]);
+  sel.projectId = pid;
+  sel.lvId = newRowId(res2);
+  sel.nodeId = sel.posId = null;
+  validateSelection();
+  renderAll();
+  openTitleDialog(null, null);
 }
 
 // ------------------------------------------------------
@@ -1219,6 +1358,10 @@ function bindEvents() {
   });
 
   $("schemaButton").addEventListener("click", migrateSchema);
+  $("quickStartForm").addEventListener("submit", saveQuickStart);
+  $("qCancel").addEventListener("click", () => $("quickStartDialog").close());
+  $("qNewProject").addEventListener("change", e => { $("qProjectFields").hidden = !e.target.checked; });
+  $("newLvButton").addEventListener("click", () => openQuickStart());
 
   $("treeSearch").addEventListener("input", e => {
     searchTerm = e.target.value.trim().toLowerCase();

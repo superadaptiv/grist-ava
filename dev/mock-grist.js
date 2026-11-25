@@ -4,7 +4,9 @@
 // Daten liegen nur im Speicher und sind nach dem Neuladen zurückgesetzt.
 // ======================================================
 (function () {
-  const legacy = new URLSearchParams(location.search).get("demo") === "alt";
+  const mode = new URLSearchParams(location.search).get("demo");
+  const legacy = mode === "alt";
+  const empty = mode === "leer";
 
   const tables = {
     Projekte: [
@@ -83,15 +85,18 @@
     tables.Leistungsverzeichnisse.forEach(l => ["Vergabeverfahren", "Angebotsfrist", "Submission", "Zuschlagsfrist", "Ort_Angebotsabgabe"].forEach(c => delete l[c]));
   }
 
+  const missing = new Set(empty ? ["Projekte", "Leistungsverzeichnisse", "Titel", "Positionen"] : []);
+  if (empty) for (const t of missing) tables[t] = [];
+
   const columns = { Projekte: new Set(), Leistungsverzeichnisse: new Set(), Titel: new Set(), Positionen: new Set() };
   for (const [t, rows] of Object.entries(tables)) rows.forEach(r => Object.keys(r).forEach(k => k !== "id" && columns[t].add(k)));
-  columns.Positionen.add("Gesamtpreis");
+  if (!empty) columns.Positionen.add("Gesamtpreis");
 
   function toColumnar(t) {
     const rows = tables[t];
     const out = { id: rows.map(r => r.id) };
     for (const c of columns[t]) {
-      out[c] = rows.map(r => c === "Gesamtpreis" ? Math.round(r.Menge * r.Einheitspreis * 100) / 100 : (r[c] ?? (c === "Uebergeordnet" ? 0 : null)));
+      out[c] = rows.map(r => c === "Gesamtpreis" && !empty ? Math.round(r.Menge * r.Einheitspreis * 100) / 100 : (r[c] ?? (c === "Uebergeordnet" ? 0 : null)));
     }
     return out;
   }
@@ -109,6 +114,7 @@
     docApi: {
       async fetchTable(t) {
         if (t.startsWith("_grist")) throw new Error("not in mock");
+        if (missing.has(t)) throw new Error("Table not found: " + t);
         return JSON.parse(JSON.stringify(toColumnar(t)));
       },
       async applyUserActions(actions) {
@@ -128,6 +134,11 @@
             ret.push(null);
           } else if (type === "BulkRemoveRecord") {
             tables[t] = tables[t].filter(r => !a[0].includes(r.id));
+            ret.push(null);
+          } else if (type === "AddTable") {
+            missing.delete(t);
+            tables[t] = [];
+            a[0].forEach(c => columns[t].add(c.id));
             ret.push(null);
           } else if (type === "AddColumn") {
             columns[t].add(a[0]);

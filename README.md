@@ -8,6 +8,8 @@ AVA-System (Ausschreibung · Vergabe · Abrechnung) als Custom Widgets für **Gr
 | Preisspiegel | `widgets/preisspiegel/` | geplant |
 | Aufmaß / Rechnung | `widgets/abrechnung/` | geplant |
 
+**Neu einrichten? → [Schritt-für-Schritt-Anleitung](docs/einrichtung.md)**
+
 Die Doku liegt in `docs/`: [Datenmodell](docs/datenmodell.md), [Roadmap](docs/roadmap.md) und [Design](docs/design.md).
 
 ---
@@ -65,6 +67,8 @@ GRIST_WIDGET_LIST_URL=https://<DEIN-NAME>.github.io/grist-ava/manifest.json
 Vorher in `manifest.json` die URL anpassen. Diese Variable ersetzt die Standardliste. Wer die Grist-Widgets weiter nutzen will, nimmt deren Einträge mit in die eigene `manifest.json` auf.
 
 ## 3. Erster Start
+Bei einem **leeren Dokument** bietet das Widget „Ersteinrichtung“ an und legt alle Tabellen selbst an (siehe [Anleitung](docs/einrichtung.md)).
+Bei einem bestehenden Dokument gilt:
 Beim ersten Öffnen erkennt das Widget fehlende Spalten und zeigt einen gelben Hinweis **„Datenmodell erweitern“**. Ein Klick auf **Jetzt anlegen** ergänzt diese Spalten:
 - `Titel.Uebergeordnet` für Untertitel (01.01)
 - `Positionen.LV` als Formel, damit man in normalen Grist-Ansichten nach LV filtern kann

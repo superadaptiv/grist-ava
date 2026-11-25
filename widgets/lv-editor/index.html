@@ -26,6 +26,7 @@
         <span class="crumb-sep">›</span>
         <select id="lvSelect" class="crumb-select" title="Leistungsverzeichnis"></select>
         <span id="lvStatus" class="pill" hidden></span>
+        <button type="button" class="btn btn-ghost btn-sm" id="newLvButton" title="Neues Projekt oder LV anlegen">+ LV</button>
       </div>
     </div>
 
@@ -52,7 +53,7 @@
 
   <div id="schemaBanner" class="banner" hidden>
     <div>
-      <b>Datenmodell erweitern</b>
+      <b id="schemaBannerTitle">Datenmodell erweitern</b>
       <span id="schemaBannerText"></span>
     </div>
     <button type="button" class="btn btn-primary" id="schemaButton">Jetzt anlegen</button>
@@ -190,6 +191,37 @@
       <span class="spacer"></span>
       <button type="button" class="btn btn-ghost" id="tCancel">Abbrechen</button>
       <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: Projekt / LV anlegen ===== -->
+<dialog id="quickStartDialog" class="dialog">
+  <form method="dialog" id="quickStartForm">
+    <h2>Neues Leistungsverzeichnis</h2>
+    <p class="muted" id="qProjectHint"></p>
+    <label class="switch"><input type="checkbox" id="qNewProject"><span>Neues Projekt anlegen</span></label>
+    <div id="qProjectFields">
+      <div class="grid-2">
+        <label class="field"><span>Projektnummer</span><input type="text" id="qProjektnummer" placeholder="z. B. 2601"></label>
+        <label class="field"><span>Projektname</span><input type="text" id="qProjektname" placeholder="z. B. Anbau M52"></label>
+      </div>
+      <label class="field"><span>Bauherr / Auftraggeber</span><input type="text" id="qBauherr"></label>
+      <label class="field"><span>Straße</span><input type="text" id="qStrasse"></label>
+      <div class="grid-2">
+        <label class="field"><span>PLZ</span><input type="text" id="qPLZ"></label>
+        <label class="field"><span>Ort</span><input type="text" id="qOrt"></label>
+      </div>
+    </div>
+    <div class="grid-2">
+      <label class="field"><span>LV-Nummer</span><input type="text" id="qLvNummer" placeholder="z. B. 02" required></label>
+      <label class="field"><span>Gewerk</span><input type="text" id="qGewerk" placeholder="z. B. Rohbau"></label>
+    </div>
+    <label class="field"><span>LV-Bezeichnung</span><input type="text" id="qLvName" placeholder="z. B. Rohbauarbeiten" required></label>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="qCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Anlegen</button>
     </div>
   </form>
 </dialog>
