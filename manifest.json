@@ -1,0 +1,12 @@
+[
+  {
+    "name": "LV-Editor (AVA)",
+    "url": "https://DEIN-NAME.github.io/grist-ava/widgets/lv-editor/",
+    "widgetId": "grist-ava/lv-editor",
+    "published": true,
+    "accessLevel": "full",
+    "description": "Leistungsverzeichnisse mit Gliederung, OZ, Druck und Typst-Export",
+    "authors": [{ "name": "grist-ava" }],
+    "isGristLabsMaintained": false
+  }
+]

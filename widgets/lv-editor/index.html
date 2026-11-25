@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LV-Editor</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Grist Plugin-API. Bei self-hosted Grist alternativ: https://<dein-grist>/grist-plugin-api.js -->
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <script>
+    // Lokale Vorschau ohne Grist: index.html?demo
+    if (new URLSearchParams(location.search).has("demo")) {
+      document.write('<script src="../../dev/mock-grist.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ===== Kopfleiste ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">LV</div>
+      <div class="crumbs">
+        <select id="projectSelect" class="crumb-select" title="Projekt"></select>
+        <span class="crumb-sep">›</span>
+        <select id="lvSelect" class="crumb-select" title="Leistungsverzeichnis"></select>
+        <span id="lvStatus" class="pill" hidden></span>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <div class="totals" id="lvTotals">
+        <span class="totals-label">LV netto</span>
+        <span class="totals-value" id="lvNet">0,00 €</span>
+      </div>
+      <span id="saveStatus" class="save-status">Bereit</span>
+      <button type="button" class="icon-btn" id="refreshButton" title="Neu laden">⟳</button>
+      <div class="menu-wrap">
+        <button type="button" class="btn btn-primary" id="printMenuButton">Drucken ▾</button>
+        <div class="menu" id="printMenu" hidden>
+          <button type="button" data-print="ausschreibung"><b>Ausschreibung</b><small>ohne Preise, mit Bieterfeldern</small></button>
+          <button type="button" data-print="kostenanschlag"><b>Kostenanschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
+          <button type="button" data-print="kurz"><b>Kurz-LV</b><small>nur Kurztexte, mit Preisen</small></button>
+          <hr>
+          <button type="button" id="exportTypstButton"><b>Typst-Datei</b><small>für eigenes Layout</small></button>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="settingsButton" title="Einstellungen">⚙</button>
+    </div>
+  </header>
+
+  <div id="schemaBanner" class="banner" hidden>
+    <div>
+      <b>Datenmodell erweitern</b>
+      <span id="schemaBannerText"></span>
+    </div>
+    <button type="button" class="btn btn-primary" id="schemaButton">Jetzt anlegen</button>
+  </div>
+  <div id="globalMessage" class="toast" hidden></div>
+
+  <div class="workspace">
+
+    <!-- ===== Gliederung ===== -->
+    <aside class="tree-panel">
+      <div class="panel-head">
+        <h2>Gliederung</h2>
+        <span class="muted" id="treeCount"></span>
+      </div>
+      <input type="search" id="treeSearch" class="search" placeholder="Suchen (OZ, Text) …">
+      <div class="tree" id="tree"></div>
+      <div class="tree-actions">
+        <button type="button" class="btn btn-ghost" id="addTitleButton">+ Titel</button>
+        <button type="button" class="btn btn-ghost" id="addSubtitleButton" disabled>+ Untertitel</button>
+      </div>
+    </aside>
+
+    <!-- ===== Hauptbereich ===== -->
+    <main class="main">
+      <div class="main-head">
+        <div class="segmented" role="tablist">
+          <button type="button" class="seg active" data-view="edit">Bearbeiten</button>
+          <button type="button" class="seg" data-view="document">Dokument</button>
+        </div>
+        <div class="node-head" id="nodeHead"></div>
+      </div>
+
+      <section class="card" id="editView">
+        <div class="card-head">
+          <div>
+            <h2 id="nodeTitle">Positionen</h2>
+            <div class="muted" id="nodeSubtitle">Bitte links einen Titel wählen</div>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn btn-ghost" id="renameNodeButton" disabled>Titel bearbeiten</button>
+            <button type="button" class="btn btn-primary" id="addPositionButton" disabled>+ Position</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="pos-table">
+            <thead>
+              <tr>
+                <th class="c-oz">OZ</th>
+                <th>Kurztext</th>
+                <th class="c-num">Menge</th>
+                <th class="c-unit">ME</th>
+                <th class="c-num">EP €</th>
+                <th class="c-num">GB €</th>
+                <th class="c-act"></th>
+              </tr>
+            </thead>
+            <tbody id="positionRows"></tbody>
+            <tfoot id="positionFoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section class="card paper" id="documentView" hidden></section>
+    </main>
+
+    <!-- ===== Inspector ===== -->
+    <aside class="inspector" id="inspector" hidden>
+      <div class="panel-head">
+        <div>
+          <div class="eyebrow">Position</div>
+          <h2 id="inspectorOz">–</h2>
+        </div>
+        <button type="button" class="icon-btn" id="closeInspector" title="Schließen">✕</button>
+      </div>
+
+      <form id="positionForm" autocomplete="off">
+        <label class="field">
+          <span>Kurztext</span>
+          <input type="text" id="fKurztext" placeholder="Kurzbeschreibung der Leistung">
+        </label>
+        <label class="field">
+          <span>Langtext</span>
+          <textarea id="fLangtext" rows="8" placeholder="Ausführliche Leistungsbeschreibung"></textarea>
+        </label>
+
+        <div class="grid-2">
+          <label class="field">
+            <span>Menge</span>
+            <input type="text" inputmode="decimal" id="fMenge" class="num">
+          </label>
+          <label class="field">
+            <span>Einheit</span>
+            <input type="text" id="fEinheit" list="unitList">
+            <datalist id="unitList"></datalist>
+          </label>
+          <label class="field">
+            <span>EP (Kostenansatz) €</span>
+            <input type="text" inputmode="decimal" id="fEinheitspreis" class="num">
+          </label>
+          <div class="field">
+            <span>GB €</span>
+            <output id="fGesamt" class="readonly num">0,00</output>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Positionsart</span>
+          <select id="fPositionstyp"></select>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="fAktiv">
+          <span>Position aktiv (sonst ausgeblendet im Druck)</span>
+        </label>
+
+        <div class="inspector-foot">
+          <span class="muted" id="dirtyIndicator"></span>
+          <div class="row-actions">
+            <button type="button" class="btn btn-ghost" id="duplicateButton">Duplizieren</button>
+            <button type="button" class="btn btn-danger" id="deleteButton">Löschen</button>
+          </div>
+        </div>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<!-- ===== Dialog: Titel ===== -->
+<dialog id="titleDialog" class="dialog">
+  <form method="dialog" id="titleForm">
+    <h2 id="titleDialogHeading">Titel</h2>
+    <label class="field"><span>Bezeichnung</span><input type="text" id="tBezeichnung" required></label>
+    <label class="field"><span>Vorbemerkung (optional)</span><textarea id="tVorbemerkung" rows="4"></textarea></label>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-danger" id="tDelete">Löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="tCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: Einstellungen ===== -->
+<dialog id="settingsDialog" class="dialog">
+  <form method="dialog" id="settingsForm">
+    <h2>Einstellungen</h2>
+    <p class="muted">Diese Angaben erscheinen im Druck als Planer-Block. Sie werden in den Widget-Optionen gespeichert.</p>
+    <label class="field"><span>Büro / Planer</span><input type="text" id="sPlaner"></label>
+    <label class="field"><span>Anschrift (mehrzeilig)</span><textarea id="sAnschrift" rows="3"></textarea></label>
+    <label class="field"><span>Ansprechpartner, Telefon, E-Mail (mehrzeilig)</span><textarea id="sKontakt" rows="3"></textarea></label>
+    <div class="grid-2">
+      <label class="field"><span>MwSt.-Satz %</span><input type="text" id="sMwst" class="num"></label>
+      <label class="field"><span>Schrittweite Positionen</span><input type="text" id="sStep" class="num"></label>
+    </div>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="sCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
