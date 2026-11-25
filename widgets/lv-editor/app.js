@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 
 const T = {
   projects: "Projekte",
@@ -234,6 +234,14 @@ function nodeTotal(nodeId) {
   let sum = positionsOf(nodeId).filter(counts).reduce((s, p) => s + lineTotal(p), 0);
   for (const c of childrenOf(nodeId)) sum += nodeTotal(c.id);
   return round2(sum);
+}
+
+// Untertitel-Summe ist doppelt, wenn der übergeordnete Titel nur diesen einen Untertitel
+// und keine eigenen Positionen hat (dann steht dieselbe Summe direkt darunter noch einmal).
+function redundantSum(t) {
+  const pid = parentOf(t);
+  if (!pid) return false;
+  return childrenOf(pid).length === 1 && !positionsOf(pid).some(p => isActive(p.Aktiv));
 }
 
 const lvTotal = () => round2(childrenOf(null).reduce((s, t) => s + nodeTotal(t.id), 0));
@@ -1323,7 +1331,7 @@ function renderDocument() {
       }
       draw(t.id);
       if (textOn(t, "Nachbemerkung")) out.push(`<div class="doc-pre"><b>Nachbemerkung</b><br>${esc(t.Nachbemerkung)}</div>`);
-      out.push(`<div class="doc-sum"><span></span><span>Summe ${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span class="r">${fmtMoney(nodeTotal(t.id))} €</span></div>`);
+      if (!redundantSum(t)) out.push(`<div class="doc-sum"><span></span><span>Summe ${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span class="r">${fmtMoney(nodeTotal(t.id))} €</span></div>`);
     }
   };
   draw(null);
@@ -1399,7 +1407,7 @@ function buildPrintHtml(mode) {
       }
       draw(t.id);
       if (textOn(t, "Nachbemerkung") && !short) body.push(`<div class="pre"><span class="pl">Nachbemerkung</span>${br(t.Nachbemerkung)}</div>`);
-      body.push(`<div class="sum"><span></span><span>Summe ${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span>${money(nodeTotal(t.id))}</span></div>`);
+      if (!redundantSum(t)) body.push(`<div class="sum"><span></span><span>Summe ${esc(nodeOz(t))} ${esc(nodeName(t))}</span><span>${money(nodeTotal(t.id))}</span></div>`);
     }
   };
   draw(null);
@@ -1410,32 +1418,45 @@ function buildPrintHtml(mode) {
   po(null);
 
   const toc = nodes.map(t => `<tr class="toc-l${Math.min(level(t), 3)}"><td>${esc(nodeOz(t))}</td><td>${esc(nodeName(t))}</td></tr>`).join("");
-  const recap = postOrder.map(t => `<tr class="${level(t) === 1 ? "strong" : ""}"><td>${esc(nodeOz(t))}</td><td>${esc(nodeName(t))}</td><td class="r">${money(nodeTotal(t.id))}</td></tr>`).join("");
-  const recap1 = childrenOf(null).map(t => `<tr><td>${esc(nodeOz(t))}</td><td>${esc(nodeName(t))}</td><td class="r">${money(nodeTotal(t.id))}</td></tr>`).join("");
-  const totals = `
-    <tr class="tot"><td></td><td class="r">LV-Summe (netto)</td><td class="r">${money(net)} €</td></tr>
-    <tr><td></td><td class="r">zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.</td><td class="r">${money(vat)} €</td></tr>
-    <tr class="tot"><td></td><td class="r">LV-Summe (brutto)</td><td class="r">${money(net + vat)} €</td></tr>`;
-  const sign = `<div class="sign"><div>(Ort)</div><div>(Datum)</div><div>(Stempel und Unterschrift)</div></div>`;
+  const recap = postOrder.filter(t => !redundantSum(t)).map(t => {
+    const lv1 = level(t) === 1;
+    return `<tr class="${lv1 ? "l1" : "sub sub" + Math.min(level(t), 3)}"><td>${esc(nodeOz(t))}</td><td>${esc(nodeName(t))}</td><td class="r">${money(nodeTotal(t.id))}</td></tr>`;
+  }).join("");
+  const eur = v => priced ? fmtMoney(v) + " €" : dots;
+  const totals = `<div class="tot">
+    <div class="n"><span>LV-Summe netto</span><span>${eur(net)}</span></div>
+    <div><span>zzgl. ${String(settings.mwst).replace(".", ",")} % MwSt.</span><span>${eur(vat)}</span></div>
+    <div class="b"><span>LV-Summe brutto</span><span>${eur(net + vat)}</span></div>
+  </div>`;
+  const sign = `<div class="sign"><div>Ort</div><div>Datum</div><div>Stempel und Unterschrift Bieter</div></div>`;
   const line = label => `<div class="fill"><span>${label}</span><span class="dots"></span></div>`;
 
-  const runningHead = `<div class="rh">
-    <div><span>Auftraggeber</span>${esc(pr.Bauherr)}</div>
-    <div><span>Planer</span>${esc(planer)}</div>
-    <div><span>Projekt</span>${esc(pr.Projektnummer)} – ${esc(pr.Projektname)}</div>
-    <div><span>LV</span>${esc(lvNr(l))} – ${esc(lvName(l))}</div>
-  </div>`;
+  const footLeft = `${pr.Projektnummer || ""} ${pr.Projektname || ""} · LV ${lvNr(l)} ${lvName(l)}`.trim();
+  const cssStr = v => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]+/g, " ") + '"';
+  const pagedSrc = new URL("vendor/paged.polyfill.min.js", location.href).href;
+  const runningHead = `<div class="rh"><div class="rhg">
+    <span>Auftraggeber</span><span>${esc(pr.Bauherr)}</span>
+    <span>Planer</span><span>${esc(planer)}</span>
+    <span>Projekt</span><span>${esc(pr.Projektnummer)} – ${esc(pr.Projektname)}</span>
+    <span>LV</span><span>${esc(lvNr(l))} – ${esc(lvName(l))}</span>
+  </div></div>`;
 
   return `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
 <title>${esc(pr.Projektnummer)}_LV ${esc(lvNr(l))} ${esc(lvName(l))}</title>
 <style>
-  @page { size: A4; margin: 14mm 14mm 18mm 20mm;
-    @bottom-left { content: "Druckausgabe vom: ${stamp}"; font: 7.5pt Arial, sans-serif; color: #555; }
-    @bottom-right { content: counter(page) "/" counter(pages); font: 7.5pt Arial, sans-serif; color: #555; } }
+  @page { size: A4; margin: 36mm 14mm 20mm 20mm;
+    @top-left { content: element(rh); vertical-align: bottom; padding-bottom: 4mm; width: 100%; }
+    @bottom-left { width: 92mm; content: ${cssStr(footLeft)}; font: 7.5pt Arial, sans-serif; color: #555; vertical-align: top; padding-top: 2mm; border-top: .5pt solid #bbb; }
+    @bottom-center { width: 48mm; content: ${cssStr("Druck: " + stamp)}; font: 7.5pt Arial, sans-serif; color: #555; vertical-align: top; padding-top: 2mm; border-top: .5pt solid #bbb; }
+    @bottom-right { width: 36mm; text-align: right; content: "Seite " counter(page) " von " counter(pages); font: 7.5pt Arial, sans-serif; color: #555; vertical-align: top; padding-top: 2mm; border-top: .5pt solid #bbb; } }
+  @page cover { margin: 14mm 14mm 14mm 20mm;
+    @top-left { content: none; } @bottom-left { content: none; border: 0; } @bottom-center { content: none; border: 0; } @bottom-right { content: none; border: 0; } }
+  .cover { page: cover; }
+  .rh { position: running(rh); }
   * { box-sizing: border-box; }
   body { font: 9pt/1.4 Arial, Helvetica, sans-serif; color: #111; margin: 0; }
   .doc-kind { font-size: 8pt; text-transform: uppercase; letter-spacing: .14em; color: #555; }
-  .cover { page-break-after: always; min-height: 255mm; display: flex; flex-direction: column; gap: 9mm; }
+  .cover { break-after: page; min-height: 262mm; display: flex; flex-direction: column; gap: 9mm; }
   .cover h1 { font-size: 22pt; margin: 2mm 0 0; }
   .cover .big { font-size: 13pt; font-weight: bold; margin-top: 1mm; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; }
@@ -1446,11 +1467,9 @@ function buildPrintHtml(mode) {
   .sign { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 8mm; margin-top: 16mm; }
   .sign div { border-top: .6pt dotted #333; padding-top: 1mm; font-size: 7.5pt; color: #555; text-align: center; }
   .cover .sign { margin-top: auto; }
-  table.frame { width: 100%; border-collapse: collapse; }
-  table.frame > thead td { padding: 0 0 4mm; }
-  .rh { display: grid; grid-template-columns: 26mm 1fr; font-size: 8pt; border-bottom: .8pt solid #111; padding-bottom: 2mm; }
-  .rh div { display: contents; }
-  .rh span { color: #555; }
+  .rh { width: 100%; text-align: left; font-size: 8pt; border-bottom: .8pt solid #111; padding-bottom: 2mm; }
+  .rhg { display: grid; grid-template-columns: 26mm 1fr; }
+  .rhg span:nth-child(odd) { color: #555; }
   .colhead { display: grid; grid-template-columns: 24mm 1fr 72mm; font-size: 7.5pt; font-weight: bold; padding: 2mm 0 1mm; border-bottom: .5pt solid #999; margin-top: 2mm; }
   .colhead .calc, .pos-calc { display: grid; grid-template-columns: 24mm 24mm 24mm; text-align: right; }
   .h { display: grid; grid-template-columns: 24mm 1fr; font-weight: bold; break-after: avoid; }
@@ -1464,9 +1483,26 @@ function buildPrintHtml(mode) {
   .pos-calc .dots { width: 21mm; margin-left: 3mm; }
   .tag { margin-left: 2mm; font-size: 7pt; padding: .2mm 1.4mm; border: .5pt solid #888; border-radius: 1mm; color: #444; }
   .nur { font-style: italic; font-size: 8pt; }
-  .sum { display: grid; grid-template-columns: 24mm 1fr 30mm; font-weight: bold; padding: 1.5mm 0 3mm; border-top: .5pt solid #999; break-before: avoid; }
+  .sum { display: grid; grid-template-columns: 24mm 1fr 30mm; align-items: end; font-weight: bold; padding: 5mm 0 3mm; border-top: .5pt solid #999; break-before: avoid; }
   .sum span:last-child { text-align: right; } .sum .dots { width: 26mm; }
-  .page { page-break-before: always; }
+  .page { break-before: page; }
+  .closing { display: flex; flex-direction: column; min-height: 230mm; }
+  .closing .sign { margin-top: auto; }
+  table.z { width: 100%; border-collapse: collapse; }
+  table.z th { font-size: 7.5pt; text-align: left; border-bottom: .5pt solid #999; padding: 0 0 1mm; }
+  table.z th.r, table.z td.r { text-align: right; }
+  table.z td { padding: 1.6mm 0; border-bottom: .3pt solid #e2e2e2; vertical-align: bottom; }
+  table.z td:first-child { width: 24mm; }
+  table.z td.r { width: 36mm; } table.z td.r .dots { width: 30mm; }
+  table.z tr.l1 td { font-weight: bold; }
+  table.z tr.sub td { color: #555; font-size: 8.5pt; padding: 1mm 0; } table.z tr.sub td.r .dots { width: 24mm; }
+  table.z tr.sub2 td:nth-child(2) { padding-left: 5mm; } table.z tr.sub3 td:nth-child(2) { padding-left: 10mm; }
+  .tot { margin: 6mm 0 0 auto; width: 92mm; break-inside: avoid; }
+  .tot div { display: flex; justify-content: space-between; align-items: flex-end; padding: 1.3mm 0; }
+  .tot .n { border-top: .8pt solid #111; font-weight: bold; padding-top: 2mm; }
+  .tot .b { border-top: .5pt solid #999; border-bottom: 2.2pt double #111; font-weight: bold; font-size: 10.5pt; padding: 2mm 0; }
+  .tot .dots { width: 34mm; flex: none; }
+  .nb { margin-top: 10mm; }
   h2 { font-size: 11pt; margin: 2mm 0 3mm; }
   table.list { width: 100%; border-collapse: collapse; }
   table.list td { padding: 1.2mm 0; vertical-align: bottom; }
@@ -1514,7 +1550,8 @@ function buildPrintHtml(mode) {
     <div class="note">Stand: ${now.toLocaleDateString("de-DE")}${lvState(l) ? " · " + esc(lvState(l)) : ""}</div></div></div>`}
 </section>
 
-<table class="frame"><thead><tr><td>${runningHead}</td></tr></thead><tbody><tr><td>
+${runningHead}
+<main>
   <h2>Inhaltsverzeichnis</h2>
   <table class="list">${toc}</table>
   ${textOn(l, "Vorbemerkung") ? `<div class="page"><h2>Vorbemerkungen</h2><div>${br(l.Vorbemerkung)}</div></div>` : ""}
@@ -1523,18 +1560,21 @@ function buildPrintHtml(mode) {
     ${body.join("")}
   </div>
 
-  <div class="page">
-    <h2>Zusammenstellung der LV-Gruppen</h2>
-    <table class="list">${recap}</table>
-  </div>
-  <div class="page">
+  <div class="page closing">
     <h2>Zusammenstellung</h2>
-    <table class="list">${recap1}${totals}</table>
-    ${textOn(l, "Nachbemerkung") ? `<h2 style="margin-top:10mm">Nachbemerkungen</h2><div>${br(l.Nachbemerkung)}</div>` : ""}
+    <table class="z"><thead><tr><th>OZ</th><th>Titel</th><th class="r">Betrag in €</th></tr></thead><tbody>${recap}</tbody></table>
+    ${totals}
+    ${textOn(l, "Nachbemerkung") ? `<div class="nb"><span class="pl">Nachbemerkungen</span>${br(l.Nachbemerkung)}</div>` : ""}
     ${mode === "ausschreibung" ? sign : ""}
   </div>
-</td></tr></tbody></table>
-<script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
+</main>
+<script>
+  let printed = false;
+  const go = () => { if (!printed) { printed = true; setTimeout(() => window.print(), 300); } };
+  window.PagedConfig = { auto: true, after: go };
+  setTimeout(() => { if (!window.PagedPolyfill) go(); }, 6000);
+<\/script>
+<script src="${pagedSrc}" onerror="go()"><\/script>
 </body></html>`;
 }
 
@@ -1546,8 +1586,14 @@ const ty = v => '"' + String(v ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"'
 function exportTypst() {
   const l = lv(), pr = project();
   if (!l || !pr) return toast("Bitte zuerst Projekt und LV wählen.");
+  const nowT = new Date();
+  const stampT = `${nowT.toLocaleDateString("de-DE")} ${nowT.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
   let s = `// Export aus dem Grist-LV-Editor ${VERSION}
-#set page(paper: "a4", margin: (left: 20mm, right: 14mm, top: 18mm, bottom: 18mm), numbering: "1/1")
+#set page(paper: "a4", margin: (left: 20mm, right: 14mm, top: 18mm, bottom: 20mm), footer: context [
+  #set text(size: 7.5pt, fill: luma(90))
+  #line(length: 100%, stroke: 0.5pt + luma(180))
+  #grid(columns: (1fr, auto, 1fr), [#${ty(`${pr.Projektnummer || ""} ${pr.Projektname || ""} · LV ${lvNr(l)} ${lvName(l)}`)}], [#${ty("Druck: " + stampT)}], align(right)[Seite #counter(page).display() von #counter(page).final().first()])
+])
 #set text(font: "Arial", size: 9pt, lang: "de")
 #let pos(oz, kt, lt, menge, me, ep, gb) = block(breakable: false, below: 8pt)[
   #grid(columns: (24mm, 1fr), oz, [*#kt* #if lt != "" [\\ #lt]])
@@ -1571,7 +1617,7 @@ function exportTypst() {
       }
       draw(t.id);
       if (textOn(t, "Nachbemerkung")) s += `#block(inset: (left: 24mm))[_Nachbemerkung:_ #${ty(t.Nachbemerkung)}]\n\n`;
-      s += `#align(right)[*Summe #${ty(nodeOz(t))}: #${ty(fmtMoney(nodeTotal(t.id)))} €*]\n\n`;
+      if (!redundantSum(t)) s += `#align(right)[*Summe #${ty(nodeOz(t))}: #${ty(fmtMoney(nodeTotal(t.id)))} €*]\n\n`;
     }
   };
   if (textOn(l, "Vorbemerkung")) s = s.replace("#line(length: 100%)\n\n", `#line(length: 100%)\n\n*Vorbemerkungen* \\ #${ty(l.Vorbemerkung)}\n\n`);

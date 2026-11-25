@@ -17,7 +17,7 @@
     ],
     Leistungsverzeichnisse: [
       { id: 1, LV_Nummer: "02", LV_Bezeichnung: "Rohbauarbeiten", Projekt: 1, Gewerk: "Rohbau", Bearbeitungsstand: "Entwurf",
-        Ausgabe_Datum: null, Abgabedatum: null, Vorbemerkung: "", Vergabeverfahren: "Freihändige Vergabe",
+        Ausgabe_Datum: null, Abgabedatum: null, Vorbemerkung: "Die Baustelle ist über die Musterstraße anfahrbar. Lagerflächen stehen nur im Vorgarten zur Verfügung (ca. 20 m²).\nAlle Leistungen sind nach VOB/C und den anerkannten Regeln der Technik auszuführen. Abrechnung nach Aufmaß, sofern nicht anders angegeben.\nDer Bestand ist während der Arbeiten bewohnt; lärmintensive Arbeiten nur werktags 8–18 Uhr.", Nachbemerkung: "Mit Abgabe des Angebots bestätigt der Bieter, die Baustelle besichtigt zu haben.", Vorbemerkung_ausblenden: false, Nachbemerkung_ausblenden: true, Vergabeverfahren: "Freihändige Vergabe",
         Angebotsfrist: "", Submission: "", Zuschlagsfrist: "", Ort_Angebotsabgabe: "Planungsbüro Muster\nBeispielweg 2\n50667 Köln" },
       { id: 2, LV_Nummer: "01", LV_Bezeichnung: "Rohbauarbeiten", Projekt: 2, Gewerk: "Rohbau", Bearbeitungsstand: "", Vorbemerkung: "" }
     ],
@@ -54,9 +54,12 @@
   ];
 
   let tid = 0, pid = 0;
+  const notes = {
+    "Abbruch- und Erdarbeiten": ["Abbruchmaterial ist vom AN zu entsorgen, Entsorgungsnachweise sind vorzulegen. Bodenklasse nach Baugrundgutachten vom 12.01.2026.", "Mehr- oder Mindermengen beim Aushub werden nach Aufmaß abgerechnet."]
+  };
   struct.forEach(([name, subs], i) => {
     const top = { id: ++tid, Titelnummer: String(i + 1).padStart(2, "0"), Titelbezeichnung: name, Leistungsverzeichnis: 1,
-      Sortierung: i + 1, Vorbemerkung: "", Aktiv: true, Uebergeordnet: 0 };
+      Sortierung: i + 1, Vorbemerkung: notes[name]?.[0] || "", Nachbemerkung: notes[name]?.[1] || "", Vorbemerkung_ausblenden: false, Nachbemerkung_ausblenden: false, Aktiv: true, Uebergeordnet: 0 };
     tables.Titel.push(top);
     subs.forEach(([sname, positions], j) => {
       const sub = { id: ++tid, Titelnummer: String(j + 1).padStart(2, "0"), Titelbezeichnung: sname, Leistungsverzeichnis: 1,
@@ -80,9 +83,9 @@
   });
 
   if (legacy) {
-    tables.Titel.forEach(t => delete t.Uebergeordnet);
+    tables.Titel.forEach(t => { delete t.Uebergeordnet; delete t.Nachbemerkung; delete t.Vorbemerkung_ausblenden; delete t.Nachbemerkung_ausblenden; });
     tables.Positionen.forEach(p => delete p.LV);
-    tables.Leistungsverzeichnisse.forEach(l => ["Vergabeverfahren", "Angebotsfrist", "Submission", "Zuschlagsfrist", "Ort_Angebotsabgabe"].forEach(c => delete l[c]));
+    tables.Leistungsverzeichnisse.forEach(l => ["Vergabeverfahren", "Angebotsfrist", "Submission", "Zuschlagsfrist", "Ort_Angebotsabgabe", "Nachbemerkung", "Vorbemerkung_ausblenden", "Nachbemerkung_ausblenden"].forEach(c => delete l[c]));
   }
 
   const missing = new Set(empty ? ["Projekte", "Leistungsverzeichnisse", "Titel", "Positionen"] : []);

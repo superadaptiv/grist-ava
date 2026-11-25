@@ -10,8 +10,8 @@ Projekte ─< Leistungsverzeichnisse ─< Titel ─< Positionen
 | Tabelle | Wichtige Spalten |
 |---|---|
 | **Projekte** | Projektnummer, Projektname, Bauherr, Strasse, PLZ, Ort, Architekt, Projektstatus |
-| **Leistungsverzeichnisse** | LV_Nummer, LV_Bezeichnung, Projekt → Projekte, Gewerk, Bearbeitungsstand, Vorbemerkung, *neu:* Vergabeverfahren, Angebotsfrist, Submission, Zuschlagsfrist, Ort_Angebotsabgabe |
-| **Titel** | Titelnummer („01“, nur die eigene Stufe), Titelbezeichnung, Leistungsverzeichnis, Sortierung, Vorbemerkung, *neu:* Uebergeordnet → Titel |
+| **Leistungsverzeichnisse** | LV_Nummer, LV_Bezeichnung, Projekt → Projekte, Gewerk, Bearbeitungsstand, Vorbemerkung, *neu:* Nachbemerkung, Vorbemerkung_ausblenden, Nachbemerkung_ausblenden, Vergabeverfahren, Angebotsfrist, Submission, Zuschlagsfrist, Ort_Angebotsabgabe |
+| **Titel** | Titelnummer („01“, nur die eigene Stufe), Titelbezeichnung, Leistungsverzeichnis, Sortierung, Vorbemerkung, *neu:* Uebergeordnet → Titel, Nachbemerkung, Vorbemerkung_ausblenden, Nachbemerkung_ausblenden |
 | **Positionen** | Titel, Positionsnummer (volle OZ „01.02.0010“), Sortierung, Kurztext, Langtext, Menge, Einheit, Einheitspreis (= Kostenansatz), Gesamtpreis (`ROUND($Menge * $Einheitspreis, 2)`), Positionstyp, Aktiv, *neu:* LV (Formel `$Titel.Leistungsverzeichnis`) |
 
 **OZ-Regel:** Titel `01`, Untertitel `01.02`, Position `01.02.0010` (Schrittweite 10, in den Einstellungen änderbar).

@@ -69,7 +69,9 @@ Die Angaben werden in den Optionen des Widgets gespeichert und gelten für diese
 |---|---|
 | Titel anlegen | **+ Titel** unten links |
 | Untertitel (01.01) | Titel markieren → **+ Untertitel** |
-| Titel umbenennen, Vorbemerkung, löschen | ✎ beim Überfahren oder Doppelklick auf den Titel |
+| Titel umbenennen oder löschen | ✎ beim Überfahren oder Doppelklick auf den Titel |
+| Vor- und Nachbemerkungen (LV und Titel) schreiben, ein-/ausschalten | Reiter **T „Texte“** in der linken Leiste |
+| Position aktiv/inaktiv | grüner bzw. grauer Punkt vor der OZ anklicken |
 | Reihenfolge | ▲▼ beim Überfahren (Titel), ↑↓ in der Tabelle (Positionen) |
 | Position anlegen | Untertitel markieren → **+ Position** (oder Strg/Cmd+Enter). Sie wird hinter der markierten eingefügt. |
 | Bearbeiten | Position anklicken → rechts im Inspector. Gespeichert wird automatisch. |
@@ -122,6 +124,9 @@ Wer die Tabellen von Hand anlegen will, muss die Spalten-IDs **genau so** schrei
 | Ausgabe_Datum | Datum |
 | Abgabedatum | Datum |
 | Vorbemerkung | Text |
+| Nachbemerkung | Text |
+| Vorbemerkung_ausblenden | Toggle (Bool) |
+| Nachbemerkung_ausblenden | Toggle (Bool) |
 | Vergabeverfahren | Text |
 | Angebotsfrist | Text |
 | Submission | Text |
@@ -137,6 +142,9 @@ Wer die Tabellen von Hand anlegen will, muss die Spalten-IDs **genau so** schrei
 | Uebergeordnet | Referenz → Titel (leer = Haupttitel) |
 | Sortierung | Numerisch |
 | Vorbemerkung | Text |
+| Nachbemerkung | Text |
+| Vorbemerkung_ausblenden | Toggle (Bool) |
+| Nachbemerkung_ausblenden | Toggle (Bool) |
 
 **Positionen**
 | Spalten-ID | Typ |
