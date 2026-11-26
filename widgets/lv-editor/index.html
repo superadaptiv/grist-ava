@@ -6,6 +6,7 @@
   <title>LV-Editor</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="zeit.css">
+  <link rel="stylesheet" href="mengen.css">
   <!-- Grist Plugin-API. Bei self-hosted Grist alternativ: https://<dein-grist>/grist-plugin-api.js -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <script>
@@ -28,6 +29,8 @@
     <span class="rsep"></span>
     <button type="button" class="ri on" data-view="edit" title="Liste bearbeiten">
       <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h9"/></svg></button>
+    <button type="button" class="ri" data-view="mengen" title="Mengen &amp; Variablen">
+      <svg viewBox="0 0 20 20"><path d="M2.5 13.5l11-11 4 4-11 11z M5.5 10.5l1.5 1.5M8 8l2 2M10.5 5.5l1.5 1.5"/></svg></button>
     <button type="button" class="ri" data-view="texts" title="Texte (Vor- und Nachbemerkungen)">
       <svg viewBox="0 0 20 20"><path d="M4 4h12M10 4v12M7.5 16h5"/></svg></button>
     <button type="button" class="ri" data-view="document" title="Dokumentansicht">
@@ -43,6 +46,7 @@
         <button type="button" data-print="kostenanschlag"><b>Kostenvoranschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
         <button type="button" data-print="kosten"><b>Kostenschätzung</b><small>kompakt, ohne Langtexte, mit Verteilung</small></button>
         <button type="button" data-print="kurz"><b>Kurz-LV</b><small>nur Kurztexte, mit Preisen</small></button>
+        <button type="button" data-print="mengen"><b>Mengenermittlung</b><small>Formeln, Rechenzeilen, Variablen</small></button>
         <hr>
         <button type="button" data-export="xlsx"><b>Excel / Calc</b><small>.xlsx mit Preisen und Formeln</small></button>
         <button type="button" data-export="xlsx-bieter"><b>Excel / Calc für Bieter</b><small>.xlsx ohne Preise, GB rechnet mit</small></button>
@@ -104,6 +108,21 @@
       </div>
     </div>
 
+    <div class="mg" id="mengenView" hidden>
+      <header class="bar">
+        <h1 class="ph">Mengen &amp; Variablen</h1>
+        <select id="mgProject" class="sel-pr" title="Projekt"></select>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-ghost" id="mgRecalc" hidden>Mengen aktualisieren</button>
+        <button type="button" class="btn btn-primary" id="mgAdd">+ Variable</button>
+      </header>
+      <div id="mgBanner" class="banner" hidden>
+        <div><b>Mengen &amp; Variablen einrichten</b> <span id="mgBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="mgInstall">Jetzt einrichten</button>
+      </div>
+      <div class="mg-scroll" id="mgBody"></div>
+    </div>
+
     <div class="zt" id="timeView" hidden>
       <header class="bar zt-bar">
         <h1 class="ph">Zeiterfassung</h1>
@@ -162,11 +181,12 @@
         <label class="f"><span>Langtext</span>
           <textarea id="fLangtext" rows="4" placeholder="Ausführliche Leistungsbeschreibung"></textarea></label>
         <div class="grid-2">
-          <label class="f"><span>Menge</span><input type="text" inputmode="decimal" id="fMenge" class="num"></label>
+          <label class="f"><span id="fMengeLbl">Menge</span><input type="text" id="fMenge" class="num" autocomplete="off"></label>
           <label class="f"><span>Einheit</span><input type="text" id="fEinheit" list="unitList"><datalist id="unitList"></datalist></label>
           <label class="f"><span>Einheitspreis €</span><input type="text" inputmode="decimal" id="fEinheitspreis" class="num"></label>
           <div class="f"><span>Gesamtbetrag</span><output id="fGesamt" class="out">0,00 €</output></div>
         </div>
+        <div class="mg-box" id="mgBox"></div>
         <div class="f"><span>Positionsart</span><div class="seg" id="typeSeg"></div></div>
         <label class="switch"><input type="checkbox" id="fAktiv"><span>Aktiv (inaktive Positionen fehlen im Druck)</span></label>
         <div class="ins-foot">
@@ -359,5 +379,6 @@
 
 <script src="app.js"></script>
 <script src="zeit.js"></script>
+<script src="mengen.js"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.8.0";
+const VERSION = "2.9.0";
 
 const T = {
   projects: "Projekte",
@@ -270,6 +270,7 @@ async function fetchAll() {
   db.lvs = rows(l);
   db.titles = rows(t);
   db.positions = rows(pos);
+  db.posCols = pos ? Object.keys(pos) : [];
 
   const have = { [T.projects]: p, [T.lvs]: l, [T.titles]: t, [T.positions]: pos };
   missingTables = FULL_SCHEMA.filter(d => !have[d.table]).map(d => d.table);
@@ -279,6 +280,7 @@ async function fetchAll() {
     for (const c of d.cols) if (!(c.id in have[d.table])) missingSchema.push({ table: d.table, ...c });
   }
   if (typeof ztFetch === "function") await ztFetch(); // Zeiterfassung (zeit.js)
+  if (typeof mgFetch === "function") await mgFetch(); // Mengen & Variablen (mengen.js)
 }
 
 async function loadChoices() {
@@ -848,6 +850,13 @@ function renderAll() {
   if (view === "texts") { renderTexts(); if (!txDirty) fillTextEditor(); renderTextPreview(); }
   if (view === "projects") renderProjects();
   if (view === "time" && !ztIsBusy()) ztRender();
+  if (view === "mengen" && !mgIsBusy()) mgRender();
+}
+
+// Variablenliste nicht neu zeichnen, während darin getippt wird
+function mgIsBusy() {
+  const a = document.activeElement;
+  return !!(a && a.closest && a.closest("#mgBody") && a.tagName === "INPUT");
 }
 
 // Zeiterfassung nicht neu zeichnen, während getippt, gezogen oder ein Dialog bearbeitet wird
@@ -962,7 +971,7 @@ function renderList() {
             <button class="adot ${active ? "on" : ""}" data-toggle-active="${p.id}" title="${active ? "Aktiv" : "Inaktiv"} (klicken zum Umschalten)"></button>
             <span class="oz">${esc(p.Positionsnummer)}</span>
             <span class="kt">${esc(p.Kurztext || "(ohne Kurztext)")}${k !== "normal" ? `<span class="tag t-${k}">${TYPE_LABEL[k]}</span>` : ""}${active ? "" : '<span class="tag t-off">inaktiv</span>'}<small>${esc(String(p.Langtext || "").split("\n")[0])}</small></span>
-            <span class="r">${fmtQty(p.Menge)}</span>
+            <span class="r">${typeof mgMark === "function" ? mgMark(p) : ""}${fmtQty(p.Menge)}</span>
             <span class="me">${esc(p.Einheit)}</span>
             <span class="r">${fmtMoney(p.Einheitspreis)}</span>
             <span class="r gb">${k === "normal" ? fmtMoney(lineTotal(p)) : '<em>nur EP</em>'}</span>
@@ -1071,6 +1080,7 @@ function fillForm(p) {
   ).join("");
   seg.dataset.value = current;
   $("unitList").innerHTML = choices.Einheit.map(u => `<option value="${esc(u)}">`).join("");
+  if (typeof mgFill === "function") mgFill(p);
   updateFormTotal();
   $("dirtyIndicator").textContent = "";
   autoGrow($("fLangtext"));
@@ -1089,7 +1099,8 @@ function formValues() {
     Einheit: $("fEinheit").value.trim(),
     Einheitspreis: parseDe($("fEinheitspreis").value),
     Positionstyp: $("typeSeg").dataset.value || "Normal",
-    Aktiv: $("fAktiv").checked
+    Aktiv: $("fAktiv").checked,
+    ...(typeof mgFormValues === "function" ? mgFormValues() : {})
   };
 }
 
@@ -1140,9 +1151,10 @@ function setView(v) {
   $("textsView").hidden = v !== "texts";
   $("projectsView").hidden = v !== "projects";
   $("timeView").hidden = v !== "time";
-  document.querySelector(".mid").classList.toggle("projview", v === "projects" || v === "time");
-  $("app").classList.toggle("wide", v === "time");
-  document.querySelector(".scroll").hidden = v === "texts" || v === "projects" || v === "time";
+  $("mengenView").hidden = v !== "mengen";
+  document.querySelector(".mid").classList.toggle("projview", v === "projects" || v === "time" || v === "mengen");
+  $("app").classList.toggle("wide", v === "time" || v === "mengen");
+  document.querySelector(".scroll").hidden = v === "texts" || v === "projects" || v === "time" || v === "mengen";
   $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
   renderInspector();
   if (v === "texts") { renderTexts(); fillTextEditor(); renderTextPreview(); }
@@ -1150,7 +1162,8 @@ function setView(v) {
   if (v === "document") renderDocument();
   if (v === "projects") renderProjects();
   if (v === "time") ztRender();
-  if (v !== "projects" && v !== "time") renderHeader();
+  if (v === "mengen") mgRender();
+  if (v !== "projects" && v !== "time" && v !== "mengen") renderHeader();
 }
 
 // ------------------------------------------------------
@@ -1253,8 +1266,9 @@ async function duplicatePosition() {
   const p = position(sel.posId);
   if (!p) return;
   await flushSave();
-  const { Kurztext, Langtext, Menge, Einheit, Einheitspreis, Positionstyp, Aktiv } = position(sel.posId);
-  await insertPosition({ Kurztext: Kurztext ? Kurztext + " (Kopie)" : "", Langtext, Menge, Einheit, Einheitspreis, Positionstyp, Aktiv });
+  const { Kurztext, Langtext, Menge, Einheit, Einheitspreis, Positionstyp, Aktiv, Mengenformel, Mengenansatz } = position(sel.posId);
+  const calc = (db.posCols || []).includes("Mengenformel") ? { Mengenformel: Mengenformel || "", Mengenansatz: Mengenansatz || "" } : {};
+  await insertPosition({ Kurztext: Kurztext ? Kurztext + " (Kopie)" : "", Langtext, Menge, Einheit, Einheitspreis, Positionstyp, Aktiv, ...calc });
 }
 
 async function deletePosition() {
@@ -1735,10 +1749,11 @@ function renderDocument() {
 function printLV(mode) {
   const l = lv(), pr = project();
   if (!l || !pr) return toast("Bitte zuerst Projekt und LV wählen.");
+  if (mode === "mengen" && !mgLvPositions().length) return toast("In diesem LV gibt es noch keine Positionen mit Formel oder Mengenansatz.");
   const w = window.open("", "_blank");
   if (!w) return toast("Bitte Pop-ups für dieses Widget erlauben.");
   w.document.open();
-  w.document.write(mode === "kosten" ? buildCostHtml() : buildPrintHtml(mode));
+  w.document.write(mode === "kosten" ? buildCostHtml() : mode === "mengen" ? mgBuildPrintHtml() : buildPrintHtml(mode));
   w.document.close();
 }
 
