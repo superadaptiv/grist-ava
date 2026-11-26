@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.9.0";
+const VERSION = "2.9.3";
 
 const T = {
   projects: "Projekte",
@@ -1001,6 +1001,8 @@ function renderList() {
 
 function renderInspector() {
   const projects = view === "projects";
+  // breiter Inspektor nur, solange eine Position mit Mengenansatz offen ist (mengen.js)
+  if (typeof mgForm !== "undefined") $("app").classList.toggle("ins-wide", view === "edit" && !!sel.posId && mgForm.posId === sel.posId && mgForm.mode === "ansatz");
   $("projectPanel").hidden = !projects;
   if (projects) {
     $("posPanel").hidden = $("summaryPanel").hidden = $("textPreview").hidden = true;

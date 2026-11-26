@@ -103,5 +103,8 @@ button.mg-use:hover { border-color: var(--ink); }
 .mg-st.lock { background: var(--hover); color: var(--muted); }
 .mg-st.err { background: #fdf1ef; color: var(--danger); }
 
-.app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 430px; }
+@media (min-width: 1201px) and (max-width: 1599px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 430px; } }
+@media (min-width: 1600px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 500px; } }
+@media (min-width: 1920px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 560px; } }
+@media (min-width: 2200px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 640px; } }
 .mg .bar select { border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 6px 8px; font-size: 13px; max-width: 340px; }

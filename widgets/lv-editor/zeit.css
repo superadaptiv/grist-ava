@@ -185,3 +185,9 @@ select.zf { padding-right: 4px; }
 .ztr .act { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
 .ztr .x { border: 0; background: none; color: var(--muted); border-radius: 6px; height: 26px; }
 .ztr .x:hover { color: var(--danger); background: #fdf1ef; }
+
+/* Kopfzeile der Zeiterfassung bricht bei schmaler Mitte um (v2.9.1) */
+@container mid (max-width: 640px) {
+  .zt-bar { flex-wrap: wrap; height: auto; row-gap: 8px; }
+  .zt-bar .spacer { display: none; }
+}
