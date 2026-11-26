@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LV-Editor</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="zeit.css">
   <!-- Grist Plugin-API. Bei self-hosted Grist alternativ: https://<dein-grist>/grist-plugin-api.js -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <script>
@@ -22,6 +23,8 @@
     <div class="logo">LV</div>
     <button type="button" class="ri" data-view="projects" title="Projekte (Übersicht)">
       <svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1.2"/><rect x="11" y="3" width="6" height="6" rx="1.2"/><rect x="3" y="11" width="6" height="6" rx="1.2"/><rect x="11" y="11" width="6" height="6" rx="1.2"/></svg></button>
+    <button type="button" class="ri" data-view="time" title="Zeiterfassung">
+      <svg viewBox="0 0 20 20"><circle cx="10" cy="10.5" r="6.5"/><path d="M10 6.5v4l2.6 1.8M8 2.5h4"/></svg></button>
     <span class="rsep"></span>
     <button type="button" class="ri on" data-view="edit" title="Liste bearbeiten">
       <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h9"/></svg></button>
@@ -99,6 +102,32 @@
         <div class="seg pfilter" id="projFilter"></div>
         <div id="projList"></div>
       </div>
+    </div>
+
+    <div class="zt" id="timeView" hidden>
+      <header class="bar zt-bar">
+        <h1 class="ph">Zeiterfassung</h1>
+        <div class="zt-wk">
+          <button type="button" class="zt-nav" id="ztPrev" title="Zurück"><svg viewBox="0 0 20 20"><path d="M12 5l-5 5 5 5"/></svg></button>
+          <b id="ztWeekLbl"></b><small id="ztWeekRange"></small>
+          <button type="button" class="zt-nav" id="ztNext" title="Weiter"><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5"/></svg></button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="ztToday">Heute</button>
+        <div class="seg zt-tabs" id="ztTabs">
+          <button type="button" data-zt="list">Liste</button>
+          <button type="button" data-zt="cal">Kalender</button>
+          <button type="button" data-zt="stats">Auswertung</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="zt-timer" id="ztTimer" hidden></div>
+        <button type="button" class="zt-nav zt-cfg" id="ztSetup" title="Name, Soll-Stunden und Tags">
+          <svg viewBox="0 0 20 20"><path d="M3 6h9M15 6h2M3 14h2M8 14h9"/><circle cx="13.5" cy="6" r="1.6"/><circle cx="6.5" cy="14" r="1.6"/></svg></button>
+      </header>
+      <div id="ztBanner" class="banner" hidden>
+        <div><b>Zeiterfassung einrichten</b> <span id="ztBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="ztInstall">Jetzt einrichten</button>
+      </div>
+      <div class="zt-scroll" id="ztBody"></div>
     </div>
 
     <div class="texts" id="textsView" hidden>
@@ -288,6 +317,47 @@
   </form>
 </dialog>
 
+<dialog id="ztDialog" class="dialog zt-dialog">
+  <form method="dialog" id="ztForm">
+    <h2 id="zdTitle">Eintrag</h2>
+    <label class="field"><span>Projekt</span><select id="zdProject"></select></label>
+    <div class="grid-2">
+      <label class="field"><span>Datum</span><input type="date" id="zdDate"></label>
+      <label class="field"><span>Zeit (13–14:30) oder Dauer (1,5h)</span><input type="text" id="zdTime" autocomplete="off"></label>
+    </div>
+    <div class="field"><span>Leistungsphase (HOAI)</span><div class="zd-lps" id="zdLp"></div><small class="muted" id="zdLpName"></small></div>
+    <div class="field"><span>Tätigkeit</span><div class="zd-tags" id="zdTags"></div></div>
+    <label class="field"><span>Notiz</span><input type="text" id="zdNote" placeholder="Was wurde gemacht? (optional)"></label>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-danger" id="zdDelete">Löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="zdCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ztSetupDialog" class="dialog dialog-wide">
+  <form method="dialog" id="ztSetupForm">
+    <h2>Zeiterfassung</h2>
+    <div class="grid-2">
+      <label class="field"><span>Dein Name (nur auf diesem Gerät)</span><input type="text" id="zsName" placeholder="z. B. Kürzel"></label>
+      <label class="field"><span>Soll-Stunden pro Woche</span><input type="text" id="zsSoll" class="num"></label>
+    </div>
+    <p class="muted">Mit Namen zeigen Liste und Kalender deine Einträge (und solche ohne Namen). Die Auswertung kann nach Person filtern.</p>
+    <div class="dialog-sec">Tags (Tätigkeiten)</div>
+    <div class="zs-tags" id="zsTags"></div>
+    <button type="button" class="link" id="zsAddTag">+ Tag hinzufügen</button>
+    <p class="muted">Tipp: Eine lange Tag-Liste kannst du auch direkt in Grist in die Tabelle „Tags“ einfügen.</p>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="zsCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="app.js"></script>
+<script src="zeit.js"></script>
 </body>
 </html>

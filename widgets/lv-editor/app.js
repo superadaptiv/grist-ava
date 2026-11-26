@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.7.0";
+const VERSION = "2.8.0";
 
 const T = {
   projects: "Projekte",
@@ -278,6 +278,7 @@ async function fetchAll() {
     if (!have[d.table]) continue;
     for (const c of d.cols) if (!(c.id in have[d.table])) missingSchema.push({ table: d.table, ...c });
   }
+  if (typeof ztFetch === "function") await ztFetch(); // Zeiterfassung (zeit.js)
 }
 
 async function loadChoices() {
@@ -846,6 +847,14 @@ function renderAll() {
   if (view === "document") renderDocument();
   if (view === "texts") { renderTexts(); if (!txDirty) fillTextEditor(); renderTextPreview(); }
   if (view === "projects") renderProjects();
+  if (view === "time" && !ztIsBusy()) ztRender();
+}
+
+// Zeiterfassung nicht neu zeichnen, während getippt, gezogen oder ein Dialog bearbeitet wird
+function ztIsBusy() {
+  const a = document.activeElement;
+  return !!(ztDrag || document.querySelector("dialog[open]") || document.querySelector(".zt-tagmenu")
+    || (a && a.closest && a.closest("#ztBody") && /INPUT|SELECT|TEXTAREA/.test(a.tagName)));
 }
 
 function renderHeader() {
@@ -1130,15 +1139,18 @@ function setView(v) {
   $("documentView").hidden = v !== "document";
   $("textsView").hidden = v !== "texts";
   $("projectsView").hidden = v !== "projects";
-  document.querySelector(".mid").classList.toggle("projview", v === "projects");
-  document.querySelector(".scroll").hidden = v === "texts" || v === "projects";
+  $("timeView").hidden = v !== "time";
+  document.querySelector(".mid").classList.toggle("projview", v === "projects" || v === "time");
+  $("app").classList.toggle("wide", v === "time");
+  document.querySelector(".scroll").hidden = v === "texts" || v === "projects" || v === "time";
   $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
   renderInspector();
   if (v === "texts") { renderTexts(); fillTextEditor(); renderTextPreview(); }
   document.querySelector(".scroll").scrollTop = 0;
   if (v === "document") renderDocument();
   if (v === "projects") renderProjects();
-  if (v !== "projects") renderHeader();
+  if (v === "time") ztRender();
+  if (v !== "projects" && v !== "time") renderHeader();
 }
 
 // ------------------------------------------------------
@@ -2305,7 +2317,7 @@ const xmlEsc = v => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
 const colName = i => String.fromCharCode(65 + i);
 
 // Baut ein Tabellenblatt aus Zeilen. Zelle: {v, s, f} – v Zahl oder Text, f Formel (ohne „=“)
-function sheetXml(rows, { cols, freeze, landscape } = {}) {
+function sheetXml(rows, { cols, freeze, landscape, footer } = {}) {
   const out = rows.map((cells, r) => {
     const cs = (cells || []).map((c, i) => {
       if (c == null) return "";
@@ -2329,7 +2341,7 @@ function sheetXml(rows, { cols, freeze, landscape } = {}) {
 <sheetData>${out}</sheetData>
 <pageMargins left="0.6" right="0.4" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
 <pageSetup paperSize="9" orientation="${landscape ? "landscape" : "portrait"}" fitToWidth="1" fitToHeight="0"/>
-<headerFooter><oddFooter>&amp;L&amp;8 ${xmlEsc(exportName("").replace(/_/g, " "))}&amp;C&amp;8 Druck: &amp;D&amp;R&amp;8 Seite &amp;P von &amp;N</oddFooter></headerFooter>
+<headerFooter><oddFooter>&amp;L&amp;8 ${xmlEsc(footer ?? exportName("").replace(/_/g, " "))}&amp;C&amp;8 Druck: &amp;D&amp;R&amp;8 Seite &amp;P von &amp;N</oddFooter></headerFooter>
 </worksheet>`;
 }
 
