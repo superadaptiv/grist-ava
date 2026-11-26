@@ -273,6 +273,66 @@ async function agStartTimer(id) {
 }
 
 // ------------------------------------------------------
+// Aufgabe in den Tageskalender ziehen = Zeiteintrag (v3.4)
+// ------------------------------------------------------
+let agRowDrag = null, agRowDragJustDropped = false;
+function agRowDragStart(ev) {
+  if (ev.button !== 0 || ev.target.closest("button, input, select, textarea, a")) return;
+  if (!document.querySelector("#agBody .zt-daycal")) return;
+  const t = agTask(Number(ev.target.closest(".ag-row").dataset.agid));
+  if (!t || agDone(t)) return;
+  agRowDrag = { t, x0: ev.clientX, y0: ev.clientY, on: false, float: null, ghost: null, col: null, start: null };
+  document.addEventListener("pointermove", agRowDragMove);
+  document.addEventListener("pointerup", agRowDragEnd, { once: true });
+}
+function agRowDragMove(ev) {
+  const d = agRowDrag; if (!d) return;
+  if (!d.on) {
+    if (Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < 6) return;
+    d.on = true;
+    d.float = document.createElement("div");
+    d.float.className = "ag-dragfloat";
+    d.float.innerHTML = `<i class="pdot" style="background:${projColor(d.t.project)}"></i>${esc(d.t.title || "Aufgabe")}`;
+    document.body.appendChild(d.float);
+    document.body.classList.add("ag-dragging");
+    document.querySelector(`#agBody .ag-row[data-agid="${d.t.id}"]`)?.classList.add("dragsrc");
+  }
+  ev.preventDefault();
+  d.float.style.left = ev.clientX + 12 + "px"; d.float.style.top = ev.clientY + 10 + "px";
+  const col = document.elementsFromPoint(ev.clientX, ev.clientY).find(x => x.classList?.contains("col") && x.closest(".zt-daycal"));
+  if (col !== d.col) { d.ghost?.remove(); d.ghost = null; d.col = col || null; }
+  if (!col) return;
+  const len = 60;
+  d.start = Math.min(CAL.h1 * 60 - len, snap(ztCalMinutes(col, ev.clientY) - 15));
+  if (!d.ghost) { d.ghost = document.createElement("div"); d.ghost.className = "blk ghost"; col.appendChild(d.ghost); }
+  d.ghost.style.top = ((d.start / 60 - CAL.h0) * CAL.px + 1) + "px";
+  d.ghost.style.height = (len / 60 * CAL.px - 2) + "px";
+  d.ghost.style.setProperty("--pc", projColor(d.t.project));
+  d.ghost.innerHTML = `<b>${esc(d.t.title || "Aufgabe")}</b><span class="t">${hm(d.start)}–${hm(d.start + len)}</span>`;
+}
+async function agRowDragEnd() {
+  document.removeEventListener("pointermove", agRowDragMove);
+  const d = agRowDrag; agRowDrag = null;
+  if (!d || !d.on) return;
+  agRowDragJustDropped = true; setTimeout(() => { agRowDragJustDropped = false; }, 0);
+  d.float?.remove(); d.ghost?.remove();
+  document.body.classList.remove("ag-dragging");
+  document.querySelectorAll("#agBody .dragsrc").forEach(x => x.classList.remove("dragsrc"));
+  if (!d.col || d.start == null) return;
+  const t = d.t, date = d.col.dataset.day, start = d.start, end = d.start + 60;
+  if (!t.project) {
+    // ohne Projekt: Dialog öffnen, Projekt dort wählen
+    return ztOpenDialog({ id: null, project: null, date, start, end, lp: t.lp, tags: t.tag ? [t.tag] : [], note: t.title, person: ztPerson(), task: t.id });
+  }
+  const actions = [["AddRecord", ZT.entries, null, entryFields({ project: t.project, lp: t.lp, tags: t.tag ? [t.tag] : [], note: t.title,
+    date, start, end, dur: 60, running: false, person: ztPerson(), task: t.id })]];
+  if (t.status === "offen") actions.push(["UpdateRecord", AG.tasks, t.id, agFields({ status: "in Arbeit" })]);
+  await apply(actions, { refresh: false });
+  await ztFetch(); await agFetch(); agRender();
+  toast(`${hm(start)}–${hm(end)} eingetragen. Unterkante ziehen ändert die Dauer.`);
+}
+
+// ------------------------------------------------------
 // Rendern
 // ------------------------------------------------------
 function agIsBusy() {
@@ -303,7 +363,10 @@ function agRender() {
   const keepQuick = $("agQuick")?.value || "";
   const focusQuick = document.activeElement?.id === "agQuick";
   const scroll = body.scrollTop;
-  body.innerHTML = agMode === "board" ? agBoardHtml() : agListHtml();
+  const withDay = agMode !== "board" && typeof ztReady === "function" && ztReady();
+  body.innerHTML = agMode === "board" ? agBoardHtml()
+    : withDay ? `<div class="zt-split ag-split"><div class="zt-lcol">${agListHtml()}</div>${ztDayPanelHtml()}</div>` : agListHtml();
+  if (withDay) ztScrollDay();
   if ($("agQuick")) { $("agQuick").value = keepQuick; agDrawParse(); if (focusQuick) $("agQuick").focus(); }
   body.scrollTop = scroll;
   if (agSel && !agTask(agSel)) agSel = null;
@@ -330,9 +393,9 @@ function agRunTick() {
   }, 1000);
 }
 
-function agMeta(t, { withPerson = true } = {}) {
+function agMeta(t, { withPerson = true, withProject = true } = {}) {
   const bits = [];
-  if (t.project) bits.push(esc(projNr(t.project) || projLabel(t.project)));
+  if (withProject && t.project) bits.push(esc(projNr(t.project) || projLabel(t.project)));
   if (t.lv) bits.push(esc(lvShort(t.lv)));
   if (withPerson && t.person && t.person !== ztPerson()) bits.push(esc(t.person));
   if (t.steps.length) bits.push(`${t.steps.filter(s => s.d).length}/${t.steps.length}`);
@@ -343,13 +406,24 @@ function agMeta(t, { withPerson = true } = {}) {
 const agWaiting = t => t.status === "warten";
 
 function agRowHtml(t) {
+  // Zeile im Stil der Zeiterfassung: Spalten mit Linien
   const run = agRunningFor(t.id), booked = agBooked(t.id), grp = agGroupOf(t);
-  const time = booked || run ? `<span class="ag-tm ${run ? "on" : ""}">${run ? "● " : ""}<span ${run ? `data-ag-run="${t.id}"` : ""}>${hm(booked)}</span>${t.est ? ` / ${String(t.est).replace(".", ",")} h` : ""}</span>` : (t.est ? `<span class="ag-tm">geschätzt ${String(t.est).replace(".", ",")} h</span>` : "");
+  const est = t.est ? String(t.est).replace(".", ",") + " h" : "";
+  const time = booked || run
+    ? `<span class="ag-tm ${run ? "on" : ""}">${run ? "● " : ""}<span ${run ? `data-ag-run="${t.id}"` : ""}>${hm(booked)}</span>${est ? ` / ${est}` : ""}</span>`
+    : (est ? `<span class="ag-tm">~ ${est}</span>` : "");
+  const due = agDone(t) && t.doneAt ? "erledigt " + fmtDay(t.doneAt) : agFmtDue(t);
+  const pj = t.project
+    ? `<i class="pdot" style="background:${projColor(t.project)}"></i><small>${esc(projNr(t.project))}</small><span>${esc(projLabel(t.project))}</span>`
+    : '<span class="muted">–</span>';
   return `<div class="ag-row ${agSel === t.id ? "sel" : ""} ${run ? "run" : ""} ${agDone(t) ? "done" : ""}" data-agid="${t.id}">
-    <button type="button" class="ag-cb ${t.high ? "hi" : ""}" data-agdone="${t.id}" title="${agDone(t) ? "Wieder öffnen" : "Erledigt"}"></button>
-    <div class="ag-main"><div class="ag-tt">${esc(t.title) || "<i>Ohne Titel</i>"}</div><div class="ag-meta">${agMeta(t)}</div></div>
-    <div class="ag-right"><div class="ag-due ${grp === "over" ? "over" : ""}">${esc(agDone(t) && t.doneAt ? "erledigt " + fmtDay(t.doneAt) : agFmtDue(t))}</div>${time}</div>
-    ${agDone(t) ? "<span></span>" : `<button type="button" class="ag-play ${run ? "on" : ""}" data-agplay="${t.id}" title="${run ? "Timer stoppen" : "Timer starten"}">${run ? "<i></i>" : '<svg viewBox="0 0 20 20"><path d="M7 5l8 5-8 5z"/></svg>'}</button>`}
+    <span class="c-cb"><button type="button" class="ag-cb ${t.high ? "hi" : ""}" data-agdone="${t.id}" title="${agDone(t) ? "Wieder öffnen" : "Erledigt"}"></button></span>
+    <span class="c-due ag-due ${grp === "over" ? "over" : ""}">${esc(due) || "–"}</span>
+    <span class="c-pj">${pj}</span>
+    <span class="c-tt"><span class="ag-tt">${esc(t.title) || "<i>Ohne Titel</i>"}</span><span class="ag-meta">${agMeta(t, { withProject: false })}</span></span>
+    <span class="c-lp">${t.lp ? "LP " + t.lp : ""}</span>
+    <span class="c-tm">${time}</span>
+    <span class="c-pl">${agDone(t) ? "" : `<button type="button" class="ag-play ${run ? "on" : ""}" data-agplay="${t.id}" title="${run ? "Timer stoppen" : "Timer starten"}">${run ? "<i></i>" : '<svg viewBox="0 0 20 20"><path d="M7 5l8 5-8 5z"/></svg>'}</button>`}</span>
   </div>`;
 }
 
@@ -365,7 +439,8 @@ function agListHtml() {
   for (const [k, n] of G) {
     const g = open.filter(t => agGroupOf(t) === k).sort(agSort);
     if (!g.length) continue;
-    h += `<div class="ag-gh ${k === "over" ? "red" : ""}">${n} <span>${g.length}</span></div>` + g.map(agRowHtml).join("");
+    const sum = g.reduce((a, t) => a + agBooked(t.id), 0);
+    h += `<div class="ag-gh ${k === "over" ? "red" : ""}"><b>${n}</b><span>${g.length} ${g.length === 1 ? "Aufgabe" : "Aufgaben"}</span>${sum ? `<span class="s">${hm(sum)} h</span>` : ""}</div>` + g.map(agRowHtml).join("");
   }
   if (!open.length) h += `<div class="zt-empty">Keine offenen Aufgaben${agProject ? " in diesem Projekt" : ""}. Oben eine eintippen und Enter drücken.</div>`;
   const done = list.filter(agDone).sort((a, b) => (b.doneAt || "").localeCompare(a.doneAt || "") || b.id - a.id);
@@ -471,7 +546,7 @@ async function agSaveField(id, key, value) {
     const row = document.querySelector(`#agBody [data-agid="${id}"] .ag-tt`);
     if (row && key === "title") row.textContent = value || "Ohne Titel";
     const meta = document.querySelector(`#agBody .ag-row[data-agid="${id}"] .ag-meta`);
-    if (meta && key === "steps") meta.innerHTML = agMeta(t);
+    if (meta && key === "steps") meta.innerHTML = agMeta(t, { withProject: false });
   }
 }
 
@@ -497,7 +572,17 @@ function agBind() {
   $("agTimer").addEventListener("click", e => { if (e.target.closest("#agStop")) ztStopTimer(); });
 
   const body = $("agBody");
+  body.addEventListener("pointerdown", e => {
+    if (e.target.closest(".zt-daycal")) return ztCalPointerDown(e);
+    if (e.target.closest(".ag-row[data-agid]")) agRowDragStart(e);
+  });
   body.addEventListener("click", e => {
+    if (agRowDragJustDropped) { agRowDragJustDropped = false; e.stopPropagation(); return; }
+    const dn = e.target.closest("[data-ztday]");
+    if (dn) { ztDayNav(Number(dn.dataset.ztday)); return agRender(); }
+    const ch = e.target.closest(".zt-dayp .chip[data-zentry]");
+    if (ch) { const en = zdb.entries.find(x => x.id === Number(ch.dataset.zentry)); if (en && !en.running) ztOpenDialog({ ...en }); return; }
+    if (e.target.closest(".zt-dayp")) return;
     const t = e.target;
     const done = t.closest("[data-agdone]"); if (done) return agToggleDone(Number(done.dataset.agdone));
     const play = t.closest("[data-agplay]"); if (play) { const id = Number(play.dataset.agplay); return agRunningFor(id) ? ztStopTimer() : agStartTimer(id); }

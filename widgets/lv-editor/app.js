@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "3.1";
+const VERSION = "3.4.4";
 
 const T = {
   projects: "Projekte",

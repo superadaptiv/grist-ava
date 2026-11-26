@@ -191,3 +191,25 @@ select.zf { padding-right: 4px; }
   .zt-bar { flex-wrap: wrap; height: auto; row-gap: 8px; }
   .zt-bar .spacer { display: none; }
 }
+
+/* Zeitauswahl (ab v3.3) */
+.zt-tp { position: fixed; z-index: 60; width: 222px; background: var(--surface); border: 1px solid var(--line-2); box-shadow: 0 12px 32px rgba(0,0,0,.14); font-size: 12.5px; }
+.zt-tp button { border: 0; background: none; font: inherit; color: var(--ink); cursor: pointer; }
+.zt-tp .tp-head { display: grid; grid-template-columns: 76px 70px 76px; border-bottom: 1px solid var(--line); }
+.zt-tp .tp-head span { padding: 7px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.zt-tp .tp-head span + span { border-left: 1px solid var(--line); }
+.zt-tp .tp-cols { display: grid; grid-template-columns: 76px 70px 76px; height: 240px; }
+.zt-tp .tp-dur button { font-family: var(--font); }
+.zt-tp .tp-col { overflow-y: auto; position: relative; }
+.zt-tp .tp-col + .tp-col { border-left: 1px solid var(--line); }
+.zt-tp .tp-col button { display: flex; justify-content: space-between; width: 100%; padding: 5px 10px; font-family: var(--mono); text-align: left; }
+.zt-tp .tp-col button small { color: var(--muted); font-family: var(--font); font-size: 11px; }
+.zt-tp .tp-col button:hover { background: var(--hover); }
+.zt-tp .tp-col button.on { background: var(--accent); color: #fff; }
+.zt-tp .tp-col button.on small { color: rgba(255,255,255,.8); }
+.zt-tp .tp-empty { padding: 12px 10px; color: var(--muted); }
+.zt-tp .tp-quick { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.zt-tp .tp-sub { padding: 6px 10px 0; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.zt-tp .tp-durs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 6px 10px 8px; }
+.zt-tp .tp-quick button, .zt-tp .tp-durs button { border: 1px solid var(--line-2); padding: 4px 8px; border-radius: 3px; }
+.zt-tp .tp-quick button:hover, .zt-tp .tp-durs button:hover { border-color: var(--accent); color: var(--accent); }

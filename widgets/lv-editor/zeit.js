@@ -48,6 +48,7 @@ let ztFilter = { project: "", person: "", tag: "" };
 let ztQuick = null;          // Zustand der Eingabezeile
 let ztEdit = null;           // Eintrag im Dialog
 let ztTick = null;
+let ztDay = null;            // Tag für die Tagesansicht neben der Liste
 
 // ------------------------------------------------------
 // Datum und Zeit
@@ -75,6 +76,7 @@ const toMin = t => { const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(String(t || "").t
 const hm = m => `${Math.floor(m / 60)}:${String(Math.round(m) % 60).padStart(2, "0")}`;
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(Math.round(m) % 60).padStart(2, "0")}`;
 const hrs = m => (Math.round(m / 6) / 10).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " h";
+const q15 = m => Math.max(15, Math.round(m / 15) * 15);   // Dauer auf 15 Minuten runden
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60; };
 
 // Eingabe „13–14:30“, „13:00-14:30“, „1,5h“, „90min“, „1:30“ (Dauer) → { start, end, dur }
@@ -83,18 +85,19 @@ function parseTimeInput(text) {
   if (!s) return null;
   let m = /^(\d{1,2}(?::\d{2})?)-(\d{1,2}(?::\d{2})?)$/.exec(s.replace(/\./g, ":"));
   if (m) {
-    const a = toMin(m[1]), b = toMin(m[2]);
+    let a = toMin(m[1]), b = toMin(m[2]);
     if (a == null || b == null || b <= a || b > 24 * 60) return null;
+    a = Math.round(a / 15) * 15; b = Math.min(24 * 60, a + q15(b - a));
     return { start: a, end: b, dur: b - a };
   }
   m = /^(\d+(?:[.,]\d+)?)(h|std)$/.exec(s);
-  if (m) { const d = Math.round(parseFloat(m[1].replace(",", ".")) * 60); return d > 0 ? { start: null, end: null, dur: d } : null; }
+  if (m) { const d = Math.round(parseFloat(m[1].replace(",", ".")) * 60); return d > 0 ? { start: null, end: null, dur: q15(d) } : null; }
   m = /^(\d+)(m|min)$/.exec(s);
-  if (m) return Number(m[1]) > 0 ? { start: null, end: null, dur: Number(m[1]) } : null;
+  if (m) return Number(m[1]) > 0 ? { start: null, end: null, dur: q15(Number(m[1])) } : null;
   m = /^(\d{1,2}):(\d{2})$/.exec(s);
-  if (m) { const d = Number(m[1]) * 60 + Number(m[2]); return d > 0 ? { start: null, end: null, dur: d } : null; }
+  if (m) { const d = Number(m[1]) * 60 + Number(m[2]); return d > 0 ? { start: null, end: null, dur: q15(d) } : null; }
   m = /^(\d+(?:[.,]\d+)?)$/.exec(s);
-  if (m) { const d = Math.round(parseFloat(m[1].replace(",", ".")) * 60); return d > 0 && d <= 24 * 60 ? { start: null, end: null, dur: d } : null; }
+  if (m) { const d = Math.round(parseFloat(m[1].replace(",", ".")) * 60); return d > 0 && d <= 24 * 60 ? { start: null, end: null, dur: q15(d) } : null; }
   return null;
 }
 
@@ -203,6 +206,7 @@ function ztRender() {
   else if (ztTab === "cal") body.innerHTML = ztCalHtml();
   else body.innerHTML = ztStatsHtml();
   if (ztTab === "list") ztRestoreQuick(keep);
+  if (ztTab === "list") ztScrollDay();
   if (ztTab === "cal") ztScrollCal();
   ztRunTick();
 }
@@ -286,7 +290,8 @@ async function ztStartTimer() {
   toast("Timer läuft.");
 }
 function ztStopFields(r) {
-  const end = r.date === todayKey() ? Math.max(r.start + 1, Math.round(nowMin())) : 24 * 60 - 1;
+  const raw = r.date === todayKey() ? Math.max(r.start + 1, Math.round(nowMin())) : 24 * 60 - 1;
+  const end = Math.min(24 * 60, r.start + q15(raw - r.start));   // auf 15 Minuten gerundet
   return { Ende: hhmm(end), Dauer_h: Math.round((end - r.start) / 60 * 100) / 100, Laeuft: false };
 }
 async function ztStopTimer() {
@@ -334,10 +339,10 @@ function ztQuickHtml() {
     <div class="zf zf-tags" id="zqTags">${tags}<button type="button" class="zt-addtag" id="zqTagBtn">+ Tag</button></div>
     <input id="zqNote" class="zf" autocomplete="off" placeholder="${ztTasksOn() ? "Was wurde gemacht? Aufgabe wählen …" : "Was wurde gemacht? (optional)"}" value="${esc(q.note)}">
     <input id="zqDate" class="zf zf-date" type="date" value="${esc(q.date)}">
-    <input id="zqTime" class="zf zf-time" placeholder="9–11:30 oder 1,5h" value="${esc(q.time)}">
+    <input id="zqTime" class="zf zf-time" placeholder="Zeit wählen …" autocomplete="off" value="${esc(q.time)}">
     <button type="button" class="btn btn-primary" id="zqAdd">Eintragen</button>
   </div>
-  <div class="zq-hint"><span>Zeit als <kbd>13–14:30</kbd> oder Dauer als <kbd>1,5h</kbd></span><span><kbd>Enter</kbd> speichert</span>
+  <div class="zq-hint"><span>Zeit anklicken oder tippen: <kbd>13–14:30</kbd> / <kbd>1,5h</kbd></span><span><kbd>Enter</kbd> speichert</span>
     <button type="button" class="link" id="zqTimer">▶ Timer mit diesen Angaben starten</button><span>Zeile anklicken = bearbeiten</span></div>
   ${ztQuickTaskHtml(q)}<div class="zq-ac" id="zqAc" hidden></div>`;
 }
@@ -430,14 +435,40 @@ function ztRowHtml(e) {
     <span class="du" ${e.running ? `data-run-dur="${e.id}"` : ""}>${hm(d)}</span></div>`;
 }
 
+function ztDayKey() {
+  const { from, to } = ztRange(), t = todayKey();
+  if (ztDay && ztDay >= from && ztDay <= to) return ztDay;
+  return t >= from && t <= to ? t : from;
+}
+function ztDayPanelHtml() {
+  const k = ztDayKey(), d = keyDate(k);
+  const lbl = `${WD[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
+  return `<aside class="zt-dayp"><div class="zt-dayh"><button type="button" class="zt-nav" data-ztday="-1" title="Tag zurück"><svg viewBox="0 0 20 20"><path d="M12 5l-5 5 5 5"/></svg></button>
+    <b>${lbl}</b>${k === todayKey() ? '<span class="pill">heute</span>' : ""}<span class="spacer"></span>
+    <button type="button" class="zt-nav" data-ztday="1" title="Tag weiter"><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5"/></svg></button></div>
+    <div class="zt-daycal" id="ztDayCal">${ztCalHtml([k])}</div></aside>`;
+}
+function ztScrollDay() {
+  const el = $("ztDayCal"); if (!el) return;
+  const first = Math.min(8, ...zdb.entries.filter(e => e.date === ztDayKey() && e.start != null).map(e => Math.floor(e.start / 60)));
+  el.scrollTop = Math.max(0, (first - CAL.h0) * CAL.px - 10);
+}
+function ztDayNav(step) {
+  ztDay = addDays(ztDayKey(), step);
+  const { from, to } = ztRange();
+  if (ztDay < from || ztDay > to) ztAnchor = ztDay;
+}
 function ztListHtml() {
+  return `<div class="zt-split"><div class="zt-lcol">${ztListMainHtml()}</div>${ztDayPanelHtml()}</div>`;
+}
+function ztListMainHtml() {
   const list = ztWeekEntries();
   const days = [...new Set(list.map(e => e.date))].sort().reverse();
   const today = todayKey();
   const groups = days.map(k => {
     const es = list.filter(e => e.date === k).sort((a, b) => (b.start ?? -1) - (a.start ?? -1) || b.id - a.id);
     const sum = es.reduce((s, e) => s + durOf(e), 0);
-    return `<div class="zday"><div class="zdh ${k === today ? "today" : ""}"><b>${fmtDay(k)}</b>${es.length} ${es.length === 1 ? "Eintrag" : "Einträge"}<span class="s">${hrs(sum)}</span></div>${es.map(ztRowHtml).join("")}</div>`;
+    return `<div class="zday"><div class="zdh ${k === today ? "today" : ""} ${k === ztDayKey() ? "cur" : ""}" data-day="${k}" title="Im Tageskalender zeigen"><b>${fmtDay(k)}</b>${es.length} ${es.length === 1 ? "Eintrag" : "Einträge"}<span class="s">${hrs(sum)}</span></div>${es.map(ztRowHtml).join("")}</div>`;
   }).join("");
   const tot = list.reduce((s, e) => s + durOf(e), 0);
   return ztQuickHtml() + ztCheckHtml() + (groups
@@ -502,9 +533,9 @@ function ztTagMenu(anchor, selected, onChange) {
 
 // ---------- Kalender ----------
 const CAL = { h0: 7, h1: 20, px: 44 };
-function ztCalHtml() {
-  const s = weekStart(ztAnchor), days = [...Array(7)].map((_, i) => addDays(s, i));
-  const es = zdb.entries.filter(e => e.date >= days[0] && e.date <= days[6] && mine(e));
+function ztCalHtml(dayList = null) {
+  const s = weekStart(ztAnchor), days = dayList || [...Array(7)].map((_, i) => addDays(s, i));
+  const es = zdb.entries.filter(e => e.date >= days[0] && e.date <= days[days.length - 1] && mine(e));
   const timed = es.filter(e => e.start != null);
   CAL.h0 = Math.min(7, ...timed.map(e => Math.floor(e.start / 60)));
   CAL.h1 = Math.max(20, ...timed.map(e => Math.ceil((e.end ?? (e.running ? nowMin() : e.start + 60)) / 60)));
@@ -528,6 +559,7 @@ function ztCalHtml() {
     if (k === today) { const n = nowMin() / 60; if (n >= CAL.h0 && n <= CAL.h1) cols += `<div class="now" style="top:${(n - CAL.h0) * CAL.px}px"></div>`; }
     cols += `</div>`;
   });
+  if (dayList) return `<div class="zcal zcal-day">${head}${cols}</div>`;
   const used = [...new Set(es.map(e => e.project))];
   return `<div class="zcal">${head}${cols}</div>
     <div class="zlgd">${used.map(id => `<span><i class="pdot" style="background:${projColor(id)}"></i>${esc(projNr(id))} ${esc(projLabel(id))}</span>`).join("")}
@@ -607,6 +639,75 @@ async function ztCalPointerUp() {
   await apply([["UpdateRecord", ZT.entries, d.e.id, { Datum: keyToSec(d.day), Start: hhmm(d.start), Ende: hhmm(d.end), Dauer_h: Math.round((d.end - d.start) / 60 * 100) / 100 }]], { refresh: false });
   await ztFetch(); ztRender();
 }
+
+// ---------- Zeitauswahl (Von / Bis / Dauer anklicken) ----------
+let ztTp = null;   // { input, start }
+const ZT_DURS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480];
+function ztFmtDur(d) { return d < 60 ? `${d} min` : String(d / 60).replace(".", ",") + " h"; }
+function ztFmtDurS(d) { return d < 60 ? `${d}m` : String(d / 60).replace(".", ",") + "h"; }
+function ztTpAnschluss(input) {
+  // Ende des letzten Eintrags am gewählten Tag (nur in der Eingabezeile)
+  const date = input.id === "zqTime" ? ($("zqDate")?.value || todayKey()) : ($("zdDate")?.value || "");
+  const ends = zdb.entries.filter(e => e.date === date && mine(e) && e.end != null).map(e => e.end);
+  return ends.length ? Math.max(...ends) : null;
+}
+function ztTpOpen(input) {
+  if (ztTp && ztTp.input === input && document.querySelector(".zt-tp")) return;
+  ztTpClose();
+  const cur = parseTimeInput(input.value);
+  ztTp = { input, start: cur && cur.start != null ? cur.start : null, end: cur && cur.end != null ? cur.end : null };
+  const m = document.createElement("div");
+  m.className = "zt-tp";
+  m.addEventListener("mousedown", e => e.preventDefault());   // Fokus bleibt im Feld
+  m.addEventListener("click", ztTpClick);
+  document.body.appendChild(m);
+  ztTpDraw();
+  const r = input.getBoundingClientRect(), w = m.offsetWidth || 222;
+  m.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + "px";
+  const below = r.bottom + 6, h = m.offsetHeight;
+  m.style.top = (below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 6) : below) + "px";
+}
+function ztTpDraw() {
+  const m = document.querySelector(".zt-tp"); if (!m || !ztTp) return;
+  const { start, end, input } = ztTp, an = ztTpAnschluss(input);
+  const slots = []; for (let t = 6 * 60; t <= 22 * 60; t += 15) slots.push(t);
+  const von = slots.map(t => `<button type="button" data-tp="von" data-v="${t}" class="${t === start ? "on" : ""}">${hm(t)}</button>`).join("");
+  const bis = start == null
+    ? `<div class="tp-empty">erst Beginn wählen</div>`
+    : slots.filter(t => t > start).map(t => `<button type="button" data-tp="bis" data-v="${t}" class="${t === end ? "on" : ""}">${hm(t)}</button>`).join("");
+  const cur = start != null && end != null ? end - start : null;
+  const durs = ZT_DURS.map(d => `<button type="button" data-tp="dur" data-v="${d}" class="${d === cur ? "on" : ""}" title="${ztFmtDur(d)}">${ztFmtDurS(d)}</button>`).join("");
+  m.innerHTML = `<div class="tp-quick">${an != null ? `<button type="button" data-tp="von" data-v="${an}" title="Beginn = Ende des letzten Eintrags">ab ${hm(an)}</button>` : ""}<button type="button" data-tp="jetzt">jetzt</button></div>
+    <div class="tp-head"><span>Von</span><span>Dauer</span><span>Bis</span></div>
+    <div class="tp-cols"><div class="tp-col" data-c="von">${von}</div><div class="tp-col tp-dur" data-c="dur">${durs}</div><div class="tp-col" data-c="bis">${bis}</div></div>`;
+  const a = m.querySelector(".tp-col[data-c=von] .on") || m.querySelector('.tp-col[data-c=von] [data-v="480"]');
+  if (a) a.parentElement.scrollTop = Math.max(0, a.offsetTop - 60);
+  const b = m.querySelector(".tp-col[data-c=bis] .on") || m.querySelector(".tp-col[data-c=bis] button");
+  if (b) b.parentElement.scrollTop = Math.max(0, b.offsetTop - 60);
+  const c = m.querySelector(".tp-col[data-c=dur] .on");
+  if (c) c.parentElement.scrollTop = Math.max(0, c.offsetTop - 60);
+}
+function ztTpSet(text) {
+  const inp = ztTp.input; inp.value = text;
+  inp.dispatchEvent(new Event("input", { bubbles: true }));
+  ztTpClose(); inp.focus();
+}
+function ztTpClick(e) {
+  const b = e.target.closest("[data-tp]"); if (!b || !ztTp) return;
+  const k = b.dataset.tp, v = Number(b.dataset.v);
+  if (k === "jetzt") { ztTp.start = Math.floor(nowMin() / 15) * 15; ztTp.end = null; return ztTpDraw(); }
+  if (k === "von") { ztTp.start = v; ztTp.end = null; ztTp.input.value = hm(v) + "–"; return ztTpDraw(); }
+  if (k === "bis") return ztTpSet(`${hm(ztTp.start)}–${hm(v)}`);
+  if (k === "dur") {
+    if (ztTp.start != null) return ztTpSet(`${hm(ztTp.start)}–${hm(Math.min(24 * 60, ztTp.start + v))}`);
+    return ztTpSet(String(v / 60).replace(".", ",") + "h");
+  }
+}
+function ztTpClose() { document.querySelector(".zt-tp")?.remove(); ztTp = null; }
+document.addEventListener("click", e => { if (e.target.id === "zqTime" || e.target.id === "zdTime") ztTpOpen(e.target); });
+document.addEventListener("focusout", e => { if (ztTp && e.target === ztTp.input) setTimeout(() => { if (ztTp && document.activeElement !== ztTp.input) ztTpClose(); }, 120); });
+document.addEventListener("keydown", e => { if (!ztTp && e.key === "ArrowDown" && (e.target.id === "zqTime" || e.target.id === "zdTime")) { e.preventDefault(); return ztTpOpen(e.target); } if (ztTp && (e.key === "Escape" || e.key === "Enter" || e.key === "Tab")) { if (e.key === "Escape") e.stopPropagation(); ztTpClose(); } }, true);
+document.addEventListener("scroll", e => { if (ztTp && !e.target.closest?.(".zt-tp")) ztTpClose(); }, true);
 
 // ---------- Dialog Eintrag ----------
 let ztDialogCancel = null;
@@ -931,13 +1032,21 @@ function ztBind() {
   $("ztTabs").addEventListener("click", e => { const b = e.target.closest("[data-zt]"); if (b) { if (ztTab === "list") ztReadQuick(); ztTab = b.dataset.zt; ztRender(); } });
   $("ztPrev").addEventListener("click", () => ztShift(-1));
   $("ztNext").addEventListener("click", () => ztShift(1));
-  $("ztToday").addEventListener("click", () => { ztAnchor = todayKey(); ztRender(); });
+  $("ztToday").addEventListener("click", () => { ztAnchor = todayKey(); ztDay = null; ztRender(); });
   $("ztInstall").addEventListener("click", ztInstall);
   $("ztSetup").addEventListener("click", ztOpenSetup);
   $("ztTimer").addEventListener("click", e => { if (e.target.closest("#ztStop")) ztStopTimer(); });
 
   const body = $("ztBody");
   body.addEventListener("click", e => {
+    const dn = e.target.closest("[data-ztday]");
+    if (dn) {
+      ztReadQuick();
+      ztDayNav(Number(dn.dataset.ztday));
+      return ztRender();
+    }
+    const dh = e.target.closest(".zdh[data-day]");
+    if (dh) { ztDay = dh.dataset.day; return ztRender(); }
     const t = e.target;
     if (t.closest("#zqAdd")) return ztAddQuick();
     if (t.closest("#zqTimer")) return ztStartTimer();
@@ -971,7 +1080,7 @@ function ztBind() {
     else return;
     ztRender();
   });
-  body.addEventListener("pointerdown", e => { if (ztTab === "cal") ztCalPointerDown(e); });
+  body.addEventListener("pointerdown", e => { if (ztTab === "cal" || e.target.closest(".zt-daycal")) ztCalPointerDown(e); });
   // Vorschläge aus den Aufgaben im Feld „Was wurde gemacht?“
   body.addEventListener("focusin", e => { if (e.target.id === "zqNote") { ztAcSel = 0; ztAcDraw(); } });
   body.addEventListener("input", e => { if (e.target.id === "zqNote") { ztAcSel = 0; ztAcDraw(); } });

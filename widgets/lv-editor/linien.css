@@ -82,7 +82,112 @@ input[type=text], input[type=search], select, textarea { border-radius: 3px; }
 .zr > * { align-self: stretch; padding: 9px 8px; border-left: 1px solid var(--line); white-space: nowrap; }
 .zr > *:first-child { border-left: 0; }
 
-/* ---------- Aufgaben ---------- */
-.ag-wrap { border-top: 1px solid var(--line-2); }
-.ag-row { border-radius: 0; margin: 0; padding: 10px 12px; }
+/* ---------- Titelleiste: auf allen Seiten gleich ---------- */
+.bar { gap: 10px; padding: 0 20px; }
+.bar .ph { font-size: 15px; font-weight: 600; margin: 0 6px 0 0; white-space: nowrap; }
+.bar select, .bar select.sel-pr, .bar select.sel-lv {
+  height: 32px; max-width: 300px; padding: 0 28px 0 10px; border: 1px solid var(--line-2); border-radius: 3px;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b8b93' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 10px center / 10px 6px;
+  color: var(--ink); font-size: 13px; font-weight: 400; appearance: none; -webkit-appearance: none; cursor: pointer;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.bar select:hover, .bar select:focus { border-color: var(--muted); outline: none; background-color: var(--surface); }
+.bar .ctx { gap: 8px; flex: 1; }
+.bar .ctx .sep { display: none; }
+.bar .btn { height: 32px; padding: 0 14px; border-radius: 3px; font-size: 13px; display: inline-flex; align-items: center; white-space: nowrap; flex: none; }
+.bar .link { height: 32px; display: inline-flex; align-items: center; }
+.bar .seg { height: 32px; padding: 2px; border-radius: 3px; flex: none; }
+.bar .seg button { padding: 0 12px; font-size: 12.5px; border-radius: 2px; }
+.bar .cmd { height: 32px; border-radius: 3px; }
+.bar .zt-nav { width: 32px; height: 32px; border-radius: 3px; }
+.bar .zt-timer { height: 32px; border-radius: 3px; }
+
+/* ---------- Zeiterfassung: Eingabezeile ohne Rahmen ---------- */
+.zq { border: 0; padding: 0; background: transparent; }
+
+/* ---------- Listen-Köpfe (Zeiterfassung und Aufgaben gleich) ---------- */
+.zday { margin-bottom: 18px; }
+.zdh { padding: 0 12px 6px; border-bottom: 1px solid var(--line-2); }
+.zdh[data-day] { cursor: pointer; }
+.zdh.cur b { color: var(--accent); }
+
+/* ---------- Zeiterfassung: Tageskalender rechts ---------- */
+.zt-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+.zt-dayp { position: sticky; top: 0; display: flex; flex-direction: column; height: calc(100vh - 56px - 40px); border: 1px solid var(--line); background: var(--surface); }
+.zt-dayh { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); }
+.zt-dayh b { font-weight: 600; }
+.zt-dayh .pill { font-size: 10px; background: var(--accent-soft); color: var(--accent); padding: 1px 6px; text-transform: uppercase; letter-spacing: .04em; }
+.zt-dayh .zt-nav { width: 28px; height: 28px; border-radius: 3px; }
+.zt-daycal { flex: 1; min-height: 0; overflow: auto; }
+.zcal.zcal-day { grid-template-columns: 44px minmax(0, 1fr); border: 0; }
+.zcal-day .ch { top: 0; min-height: 0; padding: 4px 8px; }
+.zcal-day .ch small, .zcal-day .ch b { display: none; }
+@media (max-width: 1100px) { .zt-split { grid-template-columns: minmax(0, 1fr); } .zt-dayp { display: none; } }
+
+/* ---------- Aufgaben: Liste wie die Zeiterfassung ---------- */
+.ag-scroll { padding: 18px 22px 40px; }
+.ag-wrap { max-width: none; border-top: 0; }
+.ag-add { border: 1px solid var(--line-2); border-radius: 3px; padding: 0 10px; height: 36px; }
+.ag-add:focus-within { border-color: var(--accent); }
+.ag-gh {
+  display: flex; align-items: baseline; gap: 10px; margin: 18px 0 0; padding: 0 12px 6px; border-bottom: 1px solid var(--line-2);
+  font-size: 11px; font-weight: 400; color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
+}
+.ag-gh b { color: var(--ink); font-weight: 600; }
+.ag-gh.red b { color: var(--danger); }
+.ag-gh span { color: var(--muted); }
+.ag-gh .s { margin-left: auto; font: 12px var(--mono); text-transform: none; letter-spacing: 0; color: var(--ink); }
+button.ag-more { border-bottom: 0; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.ag-row {
+  grid-template-columns: 40px 104px minmax(0, 1.1fr) minmax(0, 2fr) 52px 112px 44px;
+  gap: 0; padding: 0; margin: 0; align-items: stretch; border-radius: 0; border-bottom: 1px solid var(--line);
+}
+.ag-row > * { display: flex; align-items: center; min-width: 0; padding: 8px 10px; border-left: 1px solid var(--line); }
+.ag-row > .c-cb { border-left: 0; justify-content: center; padding: 8px 0; }
+.ag-row .ag-cb { margin: 0; }
+.ag-row .c-due { font: 12px var(--mono); color: var(--muted); margin: 0; white-space: nowrap; }
+.ag-row .c-due.over { color: var(--danger); }
+.ag-row .c-pj { gap: 8px; }
+.ag-row .c-pj small { font: 11.5px var(--mono); color: var(--muted); white-space: nowrap; }
+.ag-row .c-pj span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ag-row .c-tt { flex-direction: column; align-items: flex-start; justify-content: center; }
+.ag-row .c-tt .ag-tt { max-width: 100%; }
+.ag-row .ag-meta { margin: 1px 0 0; max-width: 100%; }
+.ag-row .ag-meta:empty { display: none; }
+.ag-row .c-lp { font: 600 11px var(--mono); color: #3f3f46; white-space: nowrap; }
+.ag-row .c-tm { justify-content: flex-end; }
+.ag-row .c-tm .ag-tm { margin: 0; white-space: nowrap; }
+.ag-row .c-pl { justify-content: center; padding: 6px 0; }
+.ag-row:hover { background: var(--hover); }
 .ag-row.sel, .ag-row.run { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); border-radius: 0; border-bottom-color: var(--line); }
+
+/* ---------- Aufgaben: Board mit Linien ---------- */
+.ag-board { gap: 0; border: 1px solid var(--line); background: var(--surface); }
+.ag-col { border-left: 1px solid var(--line); border-radius: 0; padding: 0; min-height: 420px; }
+.ag-col:first-child { border-left: 0; }
+.ag-col h3 { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line-2); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.ag-card { margin: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 12px; background: var(--surface); }
+.ag-card:hover { background: var(--hover); }
+.ag-card.sel, .ag-card.run { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.ag-card.hi { box-shadow: inset 3px 0 0 var(--danger); }
+.ag-addc { margin: 8px 12px; }
+.zr > * { display: flex; align-items: center; }
+.zr > .du { justify-content: flex-end; }
+.bar .ctx select { flex: 0 1 auto; min-width: 170px; field-sizing: content; }
+.bar .cmd { flex: 0 1 280px; }
+.ag-board { align-items: stretch; }
+.ag-col { display: flex; flex-direction: column; }
+.ag-addc { align-self: flex-start; }
+.bar .ctx { min-width: 0; overflow: hidden; }
+.bar .ctx select { max-width: 220px; min-width: 120px; }
+.bar .ctx .status, .bar .ctx .link { flex: none; }
+.bar > .cmd { flex: 0 1 240px; min-width: 120px; }
+.ag-body.has-detail .zt-split { grid-template-columns: minmax(0, 1fr); }
+.ag-body.has-detail .zt-dayp { display: none; }
+
+/* v3.4: Aufgabe in den Tageskalender ziehen */
+.ag-split .ag-row { cursor: grab; }
+body.ag-dragging, body.ag-dragging * { cursor: grabbing !important; user-select: none; }
+.ag-row.dragsrc { opacity: .45; }
+.ag-dragfloat { position: fixed; z-index: 1000; pointer-events: none; display: flex; align-items: center; gap: 6px; max-width: 260px; padding: 6px 10px; background: var(--surface, #fff); border: 1px solid var(--accent); box-shadow: 0 6px 18px rgba(0,0,0,.12); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zt-daycal .blk.ghost[style*="--pc"] { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); }
