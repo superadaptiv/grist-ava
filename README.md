@@ -97,4 +97,7 @@ Für größere Umbauten lohnt sich ein Branch `dev` mit einer zweiten Grist-Seit
 - **Strg/Cmd+Enter** legt eine neue Position an, **Esc** schließt den Editor.
 - **Positionsart:** Eventual-, Bedarfs- und Alternativpositionen erscheinen mit „Nur Einh.-Pr.“ und zählen nicht zur Summe.
 - **OZ-Sperre:** Ab LV-Status *Ausschreibung* oder *Beauftragt* werden Ordnungszahlen nicht mehr umnummeriert. Neue Positionen bekommen eine freie Nummer dazwischen.
-- **Drucken:** *Ausschreibung* (leere Preisfelder, Bieterangaben, Unterschrift), *Kostenanschlag* (mit EP und GB) oder *Kurz-LV*. Der Druck öffnet sich in einem neuen Fenster, dort „Als PDF speichern“ wählen.
+- **Zeiterfassung (ab 2.8):** Uhr-Symbol links. Zeiten je Projekt mit Leistungsphase und Tags in Liste oder Kalender eintragen, Timer, Auswertung, Stundenliste als PDF und Excel-Export. Einrichtung per Klick (Tabellen *Zeiteintraege* und *Tags*).
+- **Mengen & Variablen (ab 2.9):** Lineal-Symbol links. Variablen je Projekt (z. B. Grundfläche, Wandlängen), Formeln direkt im Mengenfeld (`=Grundfläche × 2`), Mengenansatz mit Rechenzeilen, automatisches Nachrechnen und Druck „Mengenermittlung“.
+- **Aufgaben (ab 3.0):** Häkchen-Symbol links. Einfache Aufgaben je Projekt als Liste oder Board, Schnelleingabe (`#Projekt @Person morgen !`), Teilschritte und Wiederholung. Timer direkt an der Aufgabe, gebuchte Stunden je Aufgabe, und in der Zeiterfassung lassen sich offene Aufgaben auswählen und gleich abhaken.
+- **Drucken:** *Ausschreibung* (leere Preisfelder, Bieterangaben, Unterschrift), *Kostenvoranschlag* (mit EP und GB) oder *Kurz-LV*. Der Druck öffnet sich in einem neuen Fenster, dort „Als PDF speichern“ wählen.

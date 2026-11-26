@@ -11,15 +11,19 @@
   const tables = {
     Projekte: [
       { id: 1, Projektnummer: "2501-MUS", Projektname: "Anbau Musterstraße 1", Bauherr: "Erika Musterfrau",
-        Strasse: "Musterstraße 1", PLZ: "50667", Ort: "Köln", Architekt: "Planungsbüro Muster", Projektstatus: "Planung" },
+        Strasse: "Musterstraße 1", PLZ: "50667", Ort: "Köln", Architekt: "Planungsbüro Muster", Projektstatus: "Ausschreibung" },
       { id: 2, Projektnummer: "2601", Projektname: "Anbau M52", Bauherr: "Bauherr 01",
-        Strasse: "Beispielallee 12", PLZ: "12345", Ort: "Köln", Architekt: "Planungsbüro Muster", Projektstatus: "Planung" }
+        Strasse: "Beispielallee 12", PLZ: "12345", Ort: "Köln", Architekt: "Planungsbüro Muster", Projektstatus: "Planung" },
+      { id: 3, Projektnummer: "2605", Projektname: "Garage Birkenallee", Bauherr: "Familie Muster",
+        Strasse: "Birkenallee 3", PLZ: "12345", Ort: "Musterstadt", Architekt: "Planungsbüro Muster", Projektstatus: "Planung" }
     ],
     Leistungsverzeichnisse: [
       { id: 1, LV_Nummer: "02", LV_Bezeichnung: "Rohbauarbeiten", Projekt: 1, Gewerk: "Rohbau", Bearbeitungsstand: "Entwurf",
         Ausgabe_Datum: null, Abgabedatum: null, Vorbemerkung: "Die Baustelle ist über die Musterstraße anfahrbar. Lagerflächen stehen nur im Vorgarten zur Verfügung (ca. 20 m²).\nAlle Leistungen sind nach VOB/C und den anerkannten Regeln der Technik auszuführen. Abrechnung nach Aufmaß, sofern nicht anders angegeben.\nDer Bestand ist während der Arbeiten bewohnt; lärmintensive Arbeiten nur werktags 8–18 Uhr.", Nachbemerkung: "Mit Abgabe des Angebots bestätigt der Bieter, die Baustelle besichtigt zu haben.", Vorbemerkung_ausblenden: false, Nachbemerkung_ausblenden: true, Vergabeverfahren: "Freihändige Vergabe",
         Angebotsfrist: "", Submission: "", Zuschlagsfrist: "", Ort_Angebotsabgabe: "Planungsbüro Muster\nBeispielweg 2\n50667 Köln" },
-      { id: 2, LV_Nummer: "01", LV_Bezeichnung: "Rohbauarbeiten", Projekt: 2, Gewerk: "Rohbau", Bearbeitungsstand: "", Vorbemerkung: "" }
+      { id: 2, LV_Nummer: "01", LV_Bezeichnung: "Rohbauarbeiten", Projekt: 2, Gewerk: "Rohbau", Bearbeitungsstand: "", Vorbemerkung: "" },
+      { id: 3, LV_Nummer: "03", LV_Bezeichnung: "Zimmererarbeiten", Projekt: 1, Gewerk: "Zimmerer", Bearbeitungsstand: "Ausschreibung", Vorbemerkung: "",
+        Submission: new Date(Date.now() + 9 * 864e5).toLocaleDateString("de-DE") + ", 10:00 Uhr", Zuschlagsfrist: new Date(Date.now() + 40 * 864e5).toLocaleDateString("de-DE") }
     ],
     Titel: [],
     Positionen: []
@@ -88,10 +92,91 @@
     tables.Leistungsverzeichnisse.forEach(l => ["Vergabeverfahren", "Angebotsfrist", "Submission", "Zuschlagsfrist", "Ort_Angebotsabgabe", "Nachbemerkung", "Vorbemerkung_ausblenden", "Nachbemerkung_ausblenden"].forEach(c => delete l[c]));
   }
 
-  const missing = new Set(empty ? ["Projekte", "Leistungsverzeichnisse", "Titel", "Positionen"] : []);
-  if (empty) for (const t of missing) tables[t] = [];
+  // Mengen & Variablen (ab 2.9): Variablen für Projekt 1 und berechnete Mengen im LV 02
+  tables.Variablen = [
+    { id: 1, Projekt: 1, Name: "Breite", Formel: "4,30", Wert: 4.3, Einheit: "m", Notiz: "Anbau außen", Sortierung: 1 },
+    { id: 2, Projekt: 1, Name: "Tiefe", Formel: "3,68", Wert: 3.68, Einheit: "m", Notiz: "Anbau außen", Sortierung: 2 },
+    { id: 3, Projekt: 1, Name: "Grundfläche", Formel: "Breite × Tiefe", Wert: 15.824, Einheit: "m²", Notiz: "", Sortierung: 3 },
+    { id: 4, Projekt: 1, Name: "Fundament_Länge", Formel: "2 × Tiefe + Breite", Wert: 11.66, Einheit: "m", Notiz: "ohne Anschluss an Bestand", Sortierung: 4 },
+    { id: 5, Projekt: 1, Name: "Kellerhöhe", Formel: "2,40", Wert: 2.4, Einheit: "m", Notiz: "lichte Höhe", Sortierung: 5 }
+  ];
+  const calc = {
+    "Streifenfundament herstellen": { Mengenformel: "Fundament_Länge", Menge: 11.66 },
+    "Bodenplatte herstellen": { Mengenformel: "Grundfläche", Menge: 15.824 },
+    "Geschossdecke über KG herstellen": { Mengenformel: "Grundfläche", Menge: 15.824 },
+    "Trennlage": { Mengenformel: "Grundfläche", Menge: 15.824 },
+    "Mauerwerkswände Erdgeschoss": { Mengenformel: "(4,30 + 3,68) × 2,75 − 2 × 1,26 × 1,385", Menge: 18.455 },
+    "Kellerwände herstellen": { Menge: 26.484, Mengenansatz: JSON.stringify([
+      { t: "Seitenwände Achse 1 + 2", f: "2 × Tiefe" }, { t: "", f: "× Kellerhöhe" },
+      { t: "Stirnwand Achse A", f: "Breite × Kellerhöhe" }, { t: "abzgl. Kellerfenster", f: "−2 × 1,00 × 0,75" }]) },
+    "Dämmung unter Bodenplatte, XPS": { Menge: 29.816, Mengenansatz: JSON.stringify([
+      { t: "unter Bodenplatte", f: "Grundfläche" }, { t: "Frostschürze innen + außen", f: "2 × Fundament_Länge × 0,60" }]) }
+  };
+  tables.Positionen.forEach(p => {
+    Object.assign(p, { Mengenformel: "", Mengenansatz: "" });
+    if (p.LV === 1 && calc[p.Kurztext]) Object.assign(p, calc[p.Kurztext]);
+  });
+  if (mode === "ohnemengen") tables.Positionen.forEach(p => { delete p.Mengenformel; delete p.Mengenansatz; });
 
-  const columns = { Projekte: new Set(), Leistungsverzeichnisse: new Set(), Titel: new Set(), Positionen: new Set() };
+  // Zeiterfassung: Demo-Einträge der laufenden und der Vorwoche (relativ zu heute)
+  tables.Tags = [
+    { id: 1, Name: "Entwurf", Farbe: "#7c5cdb", Beschreibung: "Planung, Varianten, Details", Aktiv: true },
+    { id: 2, Name: "Ausschreibung", Farbe: "#e07b00", Beschreibung: "LV, Vergabe", Aktiv: true },
+    { id: 3, Name: "Bauüberwachung", Farbe: "#0e7490", Beschreibung: "Baustelle, Abnahme", Aktiv: true }
+  ];
+  tables.Zeiteintraege = [];
+  {
+    const now = new Date(), dow = (now.getDay() + 6) % 7;
+    const day = off => Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() - dow + off) / 1000;
+    const E = [
+      [-7, "09:00", "12:30", 1, 3, [1], "Grundrisse überarbeitet"], [-7, "13:30", "16:00", 3, 2, [1], "Variante Satteldach"],
+      [-6, "08:30", "12:00", 1, 5, [1], "Werkplanung Anschluss Bestand"], [-5, "09:00", "11:00", 2, 6, [2], "LV Rohbau Mengen"],
+      [-4, "10:00", "11:30", 2, 8, [3], "Baustellentermin"], [-3, "13:00", "17:00", 1, 6, [2], "LV Zimmerer"],
+      [0, "08:30", "12:00", 1, 3, [1], "Grundrisse EG/OG überarbeitet"], [0, "13:00", "15:30", 2, 6, [2], "LV Rohbau: Mengen ermittelt"],
+      [0, "15:30", "17:00", 3, 2, [1], "Variante Pultdach"], [1, "08:00", "10:00", 2, 8, [3], "Baustellentermin Bodenplatte"],
+      [1, "10:30", "12:30", 1, 6, [2], "LV 03 Zimmerer: Vorbemerkungen"], [1, "13:30", "17:30", 1, 6, [2], "Positionen Dachstuhl"],
+      [2, "09:00", "11:00", 3, 2, [1], "Abstimmung mit Bauherr"], [2, "11:00", "12:00", 2, 8, [3], "Mängelliste Rohbau"],
+      [2, "13:00", "16:00", 1, 5, [1, 2], "Details Anschluss Bestand"], [3, "08:00", "09:00", 1, 7, [2], "LV 03 an Bieter versendet"],
+      [3, "", "", 3, 4, [], "Telefonate Bauamt", 0.75]
+    ];
+    E.filter(e => e[0] <= dow).forEach(([o, a, b, pr, lp, tg, nt, dur], i) => {
+      const [h1, m1] = a ? a.split(":").map(Number) : [0, 0], [h2, m2] = b ? b.split(":").map(Number) : [0, 0];
+      tables.Zeiteintraege.push({ id: i + 1, Projekt: pr, Datum: day(o), Start: a, Ende: b, Dauer_h: dur ?? ((h2 * 60 + m2 - h1 * 60 - m1) / 60),
+        LPH: lp, Tags: ["L", ...tg], Notiz: nt, Person: "", Laeuft: false });
+    });
+  }
+
+  // Aufgaben (ab 3.0): Demo-Aufgaben relativ zu heute, einige mit gebuchter Zeit
+  {
+    const now = new Date();
+    const d = off => Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + off) / 1000;
+    const dow = (now.getDay() + 6) % 7;
+    const S = (...a) => JSON.stringify(a.map(([t, x]) => ({ t, d: !!x })));
+    tables.Aufgaben = [
+      { id: 1, Titel: "Preisanfrage Fenster an 3 Firmen", Projekt: 1, LV: 0, Status: "in Arbeit", Faellig: d(-3), Uhrzeit: "", Prioritaet: true, Person: "", LPH: 6, Taetigkeit: 2, Schaetzung_h: 4, Teilschritte: S(["LV als PDF drucken", 1], ["Firmen aus Adressliste wählen"], ["E-Mail mit Excel-Rücklauf senden"]), Notiz: "Bauherr wünscht Holz-Alu. Bindefrist mind. 6 Wochen.", Wiederholung: "", Erledigt_am: null, Erstellt: d(-8) },
+      { id: 2, Titel: "Prüfstatiker Unterlagen nachreichen", Projekt: 2, LV: 0, Status: "warten", Faellig: d(-2), Uhrzeit: "", Prioritaet: false, Person: "Markus", LPH: 4, Taetigkeit: 0, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: null, Erstellt: d(-10) },
+      { id: 3, Titel: "Submission LV 03 vorbereiten", Projekt: 1, LV: 3, Status: "offen", Faellig: d(0), Uhrzeit: "", Prioritaet: true, Person: "", LPH: 7, Taetigkeit: 2, Schaetzung_h: 2, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: null, Erstellt: d(-4) },
+      { id: 4, Titel: "Stunden der Woche kontrollieren", Projekt: 0, LV: 0, Status: "offen", Faellig: d(4 - dow >= 0 ? 4 - dow : 11 - dow), Uhrzeit: "", Prioritaet: false, Person: "", LPH: 0, Taetigkeit: 0, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "wöchentlich", Erledigt_am: null, Erstellt: d(-20) },
+      { id: 5, Titel: "Rückruf Bauherr wegen Bemusterung Fliesen", Projekt: 1, LV: 0, Status: "offen", Faellig: d(0), Uhrzeit: "16:00", Prioritaet: false, Person: "Sabine", LPH: 0, Taetigkeit: 0, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: null, Erstellt: d(-1) },
+      { id: 6, Titel: "Mengen Kellerwände nach Planänderung prüfen", Projekt: 1, LV: 1, Status: "offen", Faellig: d(2), Uhrzeit: "", Prioritaet: false, Person: "", LPH: 6, Taetigkeit: 2, Schaetzung_h: 1, Teilschritte: "", Notiz: "Kellerhöhe von 2,40 auf 2,55 m geändert.", Wiederholung: "", Erledigt_am: null, Erstellt: d(-1) },
+      { id: 7, Titel: "Vergabevorschlag Rohbau an Bauherr", Projekt: 1, LV: 1, Status: "offen", Faellig: d(12), Uhrzeit: "", Prioritaet: false, Person: "", LPH: 7, Taetigkeit: 2, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: null, Erstellt: d(-1) },
+      { id: 8, Titel: "Variante Pultdach mit Bauherr abstimmen", Projekt: 3, LV: 0, Status: "offen", Faellig: null, Uhrzeit: "", Prioritaet: false, Person: "", LPH: 2, Taetigkeit: 1, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: null, Erstellt: d(-6) },
+      { id: 9, Titel: "LV 03 Zimmerer an Bieter versenden", Projekt: 1, LV: 3, Status: "erledigt", Faellig: d(-1), Uhrzeit: "", Prioritaet: false, Person: "", LPH: 7, Taetigkeit: 2, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: d(-Math.min(dow, 1)), Erstellt: d(-9) },
+      { id: 10, Titel: "Bauantrag Unterschriften einholen", Projekt: 2, LV: 0, Status: "erledigt", Faellig: d(-1), Uhrzeit: "", Prioritaet: false, Person: "", LPH: 4, Taetigkeit: 0, Schaetzung_h: 0, Teilschritte: "", Notiz: "", Wiederholung: "", Erledigt_am: d(0), Erstellt: d(-9) }
+    ];
+    // Zeiteinträge mit Aufgaben verknüpfen (falls in dieser Woche vorhanden)
+    tables.Zeiteintraege.forEach(e => {
+      e.Aufgabe = /LV 03 an Bieter/.test(e.Notiz) ? 9 : /Positionen Dachstuhl|LV Zimmerer/.test(e.Notiz) ? 3 : 0;
+    });
+    tables.Zeiteintraege.push({ id: 100, Projekt: 1, Datum: d(-1), Start: "14:00", Ende: "15:30", Dauer_h: 1.5, LPH: 6, Tags: ["L", 2], Notiz: "Preisanfrage Fenster: Firmen recherchiert", Person: "", Laeuft: false, Aufgabe: 1 });
+  }
+  if (mode === "ohneaufgaben") tables.Zeiteintraege.forEach(e => delete e.Aufgabe);
+
+  const missing = new Set(empty ? ["Projekte", "Leistungsverzeichnisse", "Titel", "Positionen", "Zeiteintraege", "Tags"] : mode === "ohnezeit" ? ["Zeiteintraege", "Tags"] : mode === "ohnemengen" ? ["Variablen"] : mode === "ohneaufgaben" ? ["Aufgaben"] : []);
+  if (empty) for (const t of [...missing, "Variablen", "Aufgaben"]) { tables[t] = []; missing.add(t); }
+  if (mode === "ohnezeit") { tables.Aufgaben = []; missing.add("Aufgaben"); }
+
+  const columns = { Projekte: new Set(), Leistungsverzeichnisse: new Set(), Titel: new Set(), Positionen: new Set(), Zeiteintraege: new Set(), Tags: new Set(), Variablen: new Set(), Aufgaben: new Set() };
   for (const [t, rows] of Object.entries(tables)) rows.forEach(r => Object.keys(r).forEach(k => k !== "id" && columns[t].add(k)));
   if (!empty) columns.Positionen.add("Gesamtpreis");
 
@@ -141,6 +226,7 @@
           } else if (type === "AddTable") {
             missing.delete(t);
             tables[t] = [];
+            columns[t] = columns[t] || new Set();
             a[0].forEach(c => columns[t].add(c.id));
             ret.push(null);
           } else if (type === "AddColumn") {

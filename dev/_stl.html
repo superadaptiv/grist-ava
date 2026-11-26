@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Stundenliste 2501-MUS 23.11.2026–29.11.2026</title><style>
+  @page { size: A4; margin: 20mm 20mm 28mm 20.5mm;
+    @bottom-left { content: "Seite " counter(page) " von " counter(pages) "  ·  erstellt am 26.11.2026"; vertical-align: bottom; padding-bottom: 16.6mm; font: 300 7.5pt "Family", "Iowan Old Style", Charter, Georgia, serif; color: #8a8a8a; width: 69mm; }
+    @bottom-right { content: element(logo); vertical-align: bottom; text-align: right; padding-bottom: 16.35mm; width: 100mm; } }
+  html { font: 300 9pt/1.32 "Family", "Iowan Old Style", Charter, Georgia, serif; color: #111; }
+  body { margin: 0; }
+  .logo-run { position: running(logo); text-align: right; line-height: 0; }
+  .logo-run img { height: 4.66mm; width: auto; max-width: 80mm; display: inline-block; }
+  h1 { font-weight: 500; font-size: 10.5pt; margin: 0 0 9mm; }
+  .meta { border-collapse: collapse; margin-bottom: 8.5mm; font-size: 10pt; }
+  .meta td { padding: 0 0 1.1mm; vertical-align: top; }
+  .meta td:first-child { width: 33mm; }
+  table.t { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .t th { font-weight: 300; font-size: 10pt; text-align: left; padding: 0 0 1.4mm; border-bottom: .6pt solid #111; }
+  .t tbody tr:first-child td { padding-top: 4.2mm; }
+  .t td { padding: 0 0 1.5mm; vertical-align: top; }
+  .t tr { break-inside: avoid; }
+  .t.pb { break-before: page; }
+  .t .r { text-align: right; padding-right: 4mm; }
+  .sum { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 2.5mm; border-top: .6pt solid #111; break-inside: avoid; }
+  .sum td { padding: 1.8mm 0 0; font-weight: 400; }
+  .sum .r { text-align: right; padding-right: 4mm; }
+  </style></head><body>
+  
+  <h1>Stundenliste</h1>
+  <table class="meta"><tr><td>Projekt</td><td>Anbau Musterstraße 1</td></tr><tr><td>Projekt-Nr.</td><td>2501-MUS</td></tr><tr><td>Zeitraum</td><td>23.11.2026 – 29.11.2026</td></tr></table>
+  <table class="t">
+    <colgroup><col style="width:16.5mm"><col style="width:11mm"><col style="width:11mm"><col style="width:15.5mm"><col style="width:9mm"><col></colgroup>
+    <thead><tr><th>Datum</th><th>von</th><th>bis</th><th class="r">Dauer</th><th>LP</th><th>Beschreibung</th></tr></thead>
+    <tbody><tr><td>23.11.26</td><td>09:30</td><td>13:00</td><td class="r">03:30 h</td><td>3</td><td>Grundrisse EG/OG überarbeitet</td></tr><tr><td>24.11.26</td><td>10:30</td><td>12:30</td><td class="r">02:00 h</td><td>6</td><td>LV 03 Zimmerer: Vorbemerkungen</td></tr><tr><td>24.11.26</td><td>13:30</td><td>17:30</td><td class="r">04:00 h</td><td>6</td><td>Positionen Dachstuhl</td></tr><tr><td>25.11.26</td><td>13:00</td><td>16:00</td><td class="r">03:00 h</td><td>5</td><td>Details Anschluss Bestand</td></tr><tr><td>25.11.26</td><td>14:00</td><td>15:30</td><td class="r">01:30 h</td><td>6</td><td>Preisanfrage Fenster: Firmen recherchiert</td></tr><tr><td>26.11.26</td><td>08:00</td><td>09:00</td><td class="r">01:00 h</td><td>7</td><td>LV 03 an Bieter versendet</td></tr></tbody>
+  </table>
+  <table class="sum"><colgroup><col style="width:38.5mm"><col style="width:15.5mm"><col></colgroup>
+    <tr><td>Summe</td><td class="r">15:00 h</td><td></td></tr></table>
+<script>
+  // Tabelle vorab auf Seiten aufteilen, damit der Tabellenkopf auf jeder Seite steht
+  function splitTable() {
+    const mm = v => v * 96 / 25.4, t = document.querySelector("table.t");
+    if (!t) return;
+    document.body.style.width = "169.5mm";
+    const rows = [...t.tBodies[0].rows], head = t.tHead.getBoundingClientRect().height;
+    const first = t.getBoundingClientRect().top - document.body.getBoundingClientRect().top;
+    const avail = mm(297 - 20 - 28) - mm(6);
+    const groups = [[]]; let used = first + head;
+    for (const r of rows) {
+      const h = r.getBoundingClientRect().height;
+      if (used + h > avail && groups[groups.length - 1].length) { groups.push([]); used = head + mm(4.2); }
+      groups[groups.length - 1].push(r); used += h;
+    }
+    document.body.style.width = "";
+    let prev = t;
+    for (const g of groups.slice(1)) {
+      const n = t.cloneNode(false); n.append(t.querySelector("colgroup").cloneNode(true), t.tHead.cloneNode(true));
+      const tb = document.createElement("tbody"); g.forEach(r => tb.appendChild(r)); n.appendChild(tb);
+      n.classList.add("pb"); prev.after(n); prev = n;
+    }
+  }
+  let printed = false;
+  const go = () => { if (!printed) { printed = true; setTimeout(() => window.__done = true, 300); } };
+  window.PagedConfig = { auto: true, before: splitTable, after: go };
+  setTimeout(() => { if (!window.PagedPolyfill) go(); }, 6000);
+</script>
+<script src="http://localhost:8765/widgets/lv-editor/vendor/paged.polyfill.min.js" onerror="go()"></script>
+</body></html>

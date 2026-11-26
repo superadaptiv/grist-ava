@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "2.9.3";
+const VERSION = "3.0";
 
 const T = {
   projects: "Projekte",
@@ -281,6 +281,7 @@ async function fetchAll() {
   }
   if (typeof ztFetch === "function") await ztFetch(); // Zeiterfassung (zeit.js)
   if (typeof mgFetch === "function") await mgFetch(); // Mengen & Variablen (mengen.js)
+  if (typeof agFetch === "function") await agFetch(); // Aufgaben (aufgaben.js)
 }
 
 async function loadChoices() {
@@ -851,6 +852,7 @@ function renderAll() {
   if (view === "projects") renderProjects();
   if (view === "time" && !ztIsBusy()) ztRender();
   if (view === "mengen" && !mgIsBusy()) mgRender();
+  if (view === "tasks" && !agIsBusy()) agRender();
 }
 
 // Variablenliste nicht neu zeichnen, während darin getippt wird
@@ -1154,9 +1156,11 @@ function setView(v) {
   $("projectsView").hidden = v !== "projects";
   $("timeView").hidden = v !== "time";
   $("mengenView").hidden = v !== "mengen";
-  document.querySelector(".mid").classList.toggle("projview", v === "projects" || v === "time" || v === "mengen");
-  $("app").classList.toggle("wide", v === "time" || v === "mengen");
-  document.querySelector(".scroll").hidden = v === "texts" || v === "projects" || v === "time" || v === "mengen";
+  $("tasksView").hidden = v !== "tasks";
+  const full = ["projects", "time", "mengen", "tasks"].includes(v);
+  document.querySelector(".mid").classList.toggle("projview", full);
+  $("app").classList.toggle("wide", v === "time" || v === "mengen" || v === "tasks");
+  document.querySelector(".scroll").hidden = v === "texts" || full;
   $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
   renderInspector();
   if (v === "texts") { renderTexts(); fillTextEditor(); renderTextPreview(); }
@@ -1165,7 +1169,8 @@ function setView(v) {
   if (v === "projects") renderProjects();
   if (v === "time") ztRender();
   if (v === "mengen") mgRender();
-  if (v !== "projects" && v !== "time" && v !== "mengen") renderHeader();
+  if (v === "tasks") agRender();
+  if (!full) renderHeader();
 }
 
 // ------------------------------------------------------

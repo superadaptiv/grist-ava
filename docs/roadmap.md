@@ -4,7 +4,7 @@
 - Gliederung mit Titel und Untertitel, OZ `01.01.0010`, OZ-Sperre ab Ausschreibung
 - Positionen anlegen, duplizieren, löschen und sortieren, mit Positionsart und Einheiten
 - Automatisches Speichern, Suche, Dokumentansicht
-- Druck als Ausschreibung (leere Preisfelder) oder Kostenanschlag, Typst-Export
+- Druck als Ausschreibung (leere Preisfelder) oder Kostenvoranschlag, Typst-Export
 - Schema-Assistent ergänzt fehlende Spalten
 
 ## Stufe 2: Komfort beim Erstellen
