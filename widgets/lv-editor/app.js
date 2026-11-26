@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "3.0";
+const VERSION = "3.1";
 
 const T = {
   projects: "Projekte",
@@ -1150,6 +1150,7 @@ async function closeInspector() {
 function setView(v) {
   view = v;
   document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  $("lvMainButton")?.classList.toggle("on", ["edit", "mengen", "texts", "document"].includes(v));
   $("list").hidden = v !== "edit";
   $("documentView").hidden = v !== "document";
   $("textsView").hidden = v !== "texts";
@@ -2665,6 +2666,11 @@ function bindEvents() {
     await flushText();
     setView(b.dataset.view);
   }));
+  $("lvMainButton").addEventListener("click", async () => {
+    await flushSave();
+    await flushText();
+    setView("edit");
+  });
   $("refreshButton").addEventListener("click", () => refresh());
   $("settingsButton").addEventListener("click", openSettings);
   $("printMenuButton").addEventListener("click", e => {

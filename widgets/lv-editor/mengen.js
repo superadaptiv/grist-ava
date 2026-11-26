@@ -555,7 +555,7 @@ function mgRender() {
       <td><input type="text" data-k="name" value="${esc(v.name)}" placeholder="Name" spellcheck="false" autocomplete="off"></td>
       <td><input type="text" data-k="formula" class="mg-expr mono" value="${esc(v.formula)}" placeholder="z. B. 4,20 + 3,85 oder Breite × Tiefe" spellcheck="false" autocomplete="off"></td>
       <td class="r res">${err ? `<span class="mg-err" title="${esc(err)}">${esc(err)}</span>` : fmtQty(ctx.values.get(k))}</td>
-      <td><input type="text" data-k="unit" value="${esc(v.unit)}" placeholder="m²" autocomplete="off"></td>
+      <td><input type="text" data-k="unit" value="${esc(v.unit)}" placeholder="Einheit" list="mgUnitList" autocomplete="off"></td>
       <td><input type="text" data-k="note" value="${esc(v.note)}" placeholder="Notiz" autocomplete="off"></td>
       <td><div class="uses">${uses || '<span class="muted">–</span>'}</div></td>
       <td><button type="button" class="x" data-del-var="${v.id}" title="Variable löschen">✕</button></td></tr>`;
@@ -581,6 +581,7 @@ function mgRender() {
       <thead><tr><th>Name</th><th>Formel / Wert</th><th class="r">Ergebnis</th><th>Einheit</th><th>Notiz</th><th>verwendet in</th><th></th></tr></thead>
       <tbody>${varRows || `<tr><td colspan="7" class="muted mg-none">Noch keine Variablen. Lege z. B. „Grundfläche“ mit <code>8,75 × 7,10</code> an.</td></tr>`}</tbody>
     </table>
+    <datalist id="mgUnitList">${((typeof choices !== "undefined" && choices.Einheit) || DEFAULT_CHOICES.Einheit).map(u => `<option value="${esc(u)}">`).join("")}</datalist>
     <button type="button" class="link mg-addrow" id="mgAdd2">+ Variable</button>
     <h3 class="mg-sec">Positionen mit berechneter Menge <span class="muted">${fps.length}</span></h3>
     ${fps.length ? `<table class="mg-pt"><colgroup><col style="width:64px"><col style="width:96px"><col style="width:28%"><col><col style="width:120px"><col style="width:200px"></colgroup><tbody>${posRows}</tbody></table>`
