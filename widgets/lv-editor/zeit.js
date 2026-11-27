@@ -189,7 +189,7 @@ async function ztInstall() {
 // Rendern
 // ------------------------------------------------------
 function ztRender() {
-  if (view === "tasks" && typeof agRender === "function") return agRender();   // Aufgaben zeigen gebuchte Zeiten
+  if (["tasks", "notes", "plan"].includes(view) && typeof agRefresh === "function") return agRefresh();   // Einträge zeigen gebuchte Zeiten
   if (view !== "time") return;
   const ready = ztReady();
   $("ztBanner").hidden = ready && !ztMissing.length;
@@ -337,7 +337,7 @@ function ztQuickHtml() {
     <select id="zqProject" class="zf" title="Projekt">${projectOptions(q.project)}</select>
     <select id="zqLp" class="zf zf-lp" title="Leistungsphase (HOAI)">${lpOptions(q.lp)}</select>
     <div class="zf zf-tags" id="zqTags">${tags}<button type="button" class="zt-addtag" id="zqTagBtn">+ Tag</button></div>
-    <input id="zqNote" class="zf" autocomplete="off" placeholder="${ztTasksOn() ? "Was wurde gemacht? Aufgabe wählen …" : "Was wurde gemacht? (optional)"}" value="${esc(q.note)}">
+    <input id="zqNote" class="zf" autocomplete="off" placeholder="${ztTasksOn() ? "Was wurde gemacht? Eintrag wählen …" : "Was wurde gemacht? (optional)"}" value="${esc(q.note)}">
     <input id="zqDate" class="zf zf-date" type="date" value="${esc(q.date)}">
     <input id="zqTime" class="zf zf-time" placeholder="Zeit wählen …" autocomplete="off" value="${esc(q.time)}">
     <button type="button" class="btn btn-primary" id="zqAdd">Eintragen</button>
@@ -352,41 +352,67 @@ const ztTasksOn = () => !!zdb.hasTask && typeof agdb !== "undefined" && agdb.tas
 function ztQuickTaskHtml(q) {
   const t = q.task && typeof agTask === "function" ? agTask(q.task) : null;
   if (!t) { q.task = null; return ""; }
-  return `<div class="zq-task"><span class="ck">☑</span>Aufgabe: <b>${esc(t.title)}</b><button type="button" class="x" id="zqTaskX" title="Verknüpfung lösen">✕</button>
-    ${agDone(t) ? `<span class="muted">bereits erledigt</span>` : `<label><input type="checkbox" id="zqClose" ${q.closeTask ? "checked" : ""}> Aufgabe damit erledigt</label>`}</div>`;
+  return `<div class="zq-task"><span class="ck">${agKindIcon(t)}</span>Eintrag: <b>${esc(t.title)}</b><button type="button" class="x" id="zqTaskX" title="Verknüpfung lösen">✕</button>
+    ${!agIsTask(t) ? "" : agDone(t) ? `<span class="muted">bereits erledigt</span>` : `<label><input type="checkbox" id="zqClose" ${q.closeTask ? "checked" : ""}> Aufgabe damit erledigt</label>`}</div>`;
 }
+// ab v4.0: alle Einträge vorschlagen (Aufgaben, Notizen, Bauzeitenplan), nicht nur Aufgaben
 let ztAcSel = 0;
 function ztAcList() {
   if (!ztTasksOn()) return [];
   const pid = Number($("zqProject")?.value) || null;
   const words = ($("zqNote")?.value || "").toLowerCase().split(/\s+/).filter(Boolean);
-  const cur = ztQuick?.task;
-  return agdb.tasks.filter(t => !agDone(t) && t.id !== cur && (!pid || t.project === pid)
-      && (!t.person || !ztPerson() || t.person === ztPerson())
-      && words.every(w => t.title.toLowerCase().includes(w)))
-    .sort((a, b) => (agGroupOf(a) === "over" || agGroupOf(a) === "today" ? 0 : 1) - (agGroupOf(b) === "over" || agGroupOf(b) === "today" ? 0 : 1) || agSort(a, b))
-    .slice(0, 8);
+  const cur = ztQuick?.task, today = todayKey();
+  const rank = t => agIsTask(t) && ["over", "today"].includes(agGroupOf(t)) ? 0          // heute fällig zuerst
+    : ztRunning()?.task === t.id ? 0
+    : agIsTask(t) && t.status === "in Arbeit" ? 1
+    : agInPlan(t) && t.begin <= today && (t.end || t.begin) >= today ? 1              // läuft gerade im Plan
+    : t.created === today ? 2 : 3;
+  return agdb.tasks.filter(t => (!agDone(t) || (agInPlan(t) && (t.end || t.begin) >= today)) && t.id !== cur && (!pid || t.project === pid)
+      && (!t.person || !ztPerson() || t.person === ztPerson() || !agIsTask(t))
+      && words.every(w => (t.title + " " + t.group).toLowerCase().includes(w)))
+    .sort((a, b) => rank(a) - rank(b) || (b.created || "").localeCompare(a.created || "") || b.id - a.id)
+    .slice(0, 7);
+}
+// Menüpunkte: Einträge, dann „Neuer Eintrag … (als Notiz merken)“, dann „ohne Eintrag buchen“
+function ztAcItems() {
+  const list = ztAcList().map(t => ({ kind: "entry", t }));
+  const text = ($("zqNote")?.value || "").trim();
+  if (text && ztTasksOn() && !agdb.tasks.some(t => t.title.toLowerCase() === text.toLowerCase())) list.push({ kind: "new", text });
+  if (list.length) list.push({ kind: "none" });
+  return list;
+}
+function ztAcSub(t, pid) {
+  const b = agBooked(t.id), bits = [];
+  if (!pid && t.project) bits.push(esc(projNr(t.project) || projLabel(t.project)));
+  if (agIsTask(t)) bits.push(agDone(t) ? "Aufgabe erledigt" : "Aufgabe" + (t.due ? ", " + esc(agFmtDue(t)) + (t.due <= todayKey() ? " fällig" : "") : ""));
+  else if (agInPlan(t)) bits.push("Bauzeitenplan" + (t.lv ? " · " + esc(lvShort(t.lv)) : ""));
+  else bits.push("Notiz" + (t.created === todayKey() ? " von heute" : t.created ? " vom " + agDM(t.created) : ""));
+  if (b) bits.push(hm(b) + (t.est ? " / " + String(t.est).replace(".", ",") : "") + " h");
+  return bits.join(" · ");
 }
 function ztAcDraw() {
   const box = $("zqAc"), inp = $("zqNote"); if (!box || !inp) return;
-  const list = ztAcList();
-  if (!list.length || document.activeElement !== inp) { box.hidden = true; return; }
-  ztAcSel = Math.min(ztAcSel, list.length - 1);
+  const items = ztAcItems();
+  if (!items.length || document.activeElement !== inp) { box.hidden = true; return; }
+  ztAcSel = Math.min(ztAcSel, items.length - 1);
   const pid = Number($("zqProject")?.value) || null;
-  box.innerHTML = `<div class="h">Offene Aufgaben${pid ? " · " + esc(projNr(pid) || projLabel(pid)) : ""}</div>` + list.map((t, i) => {
-    const b = agBooked(t.id);
-    return `<div class="o ${i === ztAcSel ? "on" : ""}" data-zqtask="${t.id}"><span class="ag-cb sm ${t.high ? "hi" : ""}"></span><span class="t">${esc(t.title)}</span><small>${[!pid ? esc(projNr(t.project)) : "", t.lv ? esc(lvShort(t.lv)) : "", b ? hm(b) + " h" : "", esc(agFmtDue(t))].filter(Boolean).join(" · ")}</small></div>`;
+  box.innerHTML = `<div class="h">Eintrag verknüpfen${pid ? " · " + esc(projNr(pid) || projLabel(pid)) : ""}</div>` + items.map((it, i) => {
+    if (it.kind === "new") return `<div class="o oo ${i === ztAcSel ? "on" : ""}" data-zqnew="1">+ Neuer Eintrag „${esc(it.text)}“ <small>(als Notiz merken)</small></div>`;
+    if (it.kind === "none") return `<div class="o oo ${i === ztAcSel ? "on" : ""}" data-zqnone="1">ohne Eintrag buchen</div>`;
+    const t = it.t;
+    return `<div class="o ${i === ztAcSel ? "on" : ""}" data-zqtask="${t.id}"><span class="ki ${agIsTask(t) ? "k-task" : agInPlan(t) ? "k-plan" : "k-note"}">${agKindIcon(t)}</span><span class="tx"><span class="t">${esc(t.title)}</span><small>${ztAcSub(t, pid)}</small></span></div>`;
   }).join("") + `<div class="f">↑↓ wählen · Enter übernehmen · Esc frei schreiben</div>`;
   const r = inp.getBoundingClientRect(), host = $("ztBody").getBoundingClientRect();
   box.style.left = (r.left - host.left + $("ztBody").scrollLeft) + "px";
   box.style.top = (r.bottom - host.top + $("ztBody").scrollTop + 4) + "px";
-  box.style.width = Math.max(r.width, 380) + "px";
+  box.style.width = Math.max(r.width, 420) + "px";
   box.hidden = false;
 }
 function ztAcPick(id) {
   const t = agTask(id); if (!t) return;
   const q = ztReadQuick();
-  q.task = id; q.note = t.title; q.closeTask = false;
+  q.task = id; q.closeTask = false;
+  if (!q.note.trim() || agIsTask(t) || agInPlan(t)) q.note = t.title;   // eigene Beschreibung bleibt, wenn man frei geschrieben hat
   if (t.project) q.project = t.project;
   if (t.lp) q.lp = t.lp;
   if (t.tag) q.tags = [t.tag];
@@ -396,14 +422,30 @@ function ztAcPick(id) {
   ztRender();
   $("zqTime")?.focus();
 }
+// Aus der Beschreibung direkt einen Eintrag (Notiz) machen und verknüpfen
+async function ztAcNew() {
+  const q = ztReadQuick(), text = q.note.trim(); if (!text) return;
+  const res = await apply([["AddRecord", AG.tasks, null, agFields({ title: text, project: q.project, status: "", person: ztPerson(), lp: q.lp, tag: q.tags[0] || null, created: todayKey() })]], { refresh: false });
+  await agFetch();
+  const id = newRowId(res);
+  $("zqAc").hidden = true;
+  if (id) { q.task = id; toast("Als Notiz gemerkt und verknüpft."); }
+  ztRender();
+  $("zqTime")?.focus();
+}
 // true = Taste wurde vom Vorschlagsmenü verarbeitet
 function ztAcKey(e) {
   const box = $("zqAc");
   if (e.target.id !== "zqNote" || !box || box.hidden) return false;
-  const list = ztAcList();
-  if (e.key === "ArrowDown") { ztAcSel = (ztAcSel + 1) % list.length; ztAcDraw(); }
-  else if (e.key === "ArrowUp") { ztAcSel = (ztAcSel - 1 + list.length) % list.length; ztAcDraw(); }
-  else if (e.key === "Enter" && list[ztAcSel]) ztAcPick(list[ztAcSel].id);
+  const items = ztAcItems();
+  if (e.key === "ArrowDown") { ztAcSel = (ztAcSel + 1) % items.length; ztAcDraw(); }
+  else if (e.key === "ArrowUp") { ztAcSel = (ztAcSel - 1 + items.length) % items.length; ztAcDraw(); }
+  else if (e.key === "Enter" && items[ztAcSel]) {
+    const it = items[ztAcSel];
+    if (it.kind === "entry") ztAcPick(it.t.id);
+    else if (it.kind === "new") ztAcNew();
+    else box.hidden = true;
+  }
   else if (e.key === "Escape") box.hidden = true;
   else return false;
   e.preventDefault();
@@ -424,6 +466,12 @@ function ztWeekEntries() {
   return zdb.entries.filter(e => e.date >= from && e.date <= to && mine(e));
 }
 
+// Verknüpfter Eintrag als kleines Abzeichen (ab v4.0)
+function ztEntryChip(e) {
+  const t = e.task && typeof agTask === "function" ? agTask(e.task) : null; if (!t) return "";
+  const k = agIsTask(t) ? "eb-task" : agInPlan(t) ? "eb-plan" : "eb-note";
+  return ` <span class="eb ${k} zr-ent" title="Eintrag: ${esc(t.title)}">${agKindIcon(t)}${t.title === e.note ? "" : esc(t.title)}</span>`;
+}
 function ztRowHtml(e) {
   const d = durOf(e);
   return `<div class="zr ${e.running ? "run" : ""}" data-zentry="${e.id}">
@@ -431,7 +479,7 @@ function ztRowHtml(e) {
     <span class="pj"><i class="pdot" style="background:${projColor(e.project)}"></i><small>${esc(projNr(e.project))}</small><span>${esc(projLabel(e.project))}</span></span>
     <span class="lp">${e.lp ? "LP " + e.lp : ""}</span>
     <span class="ztg">${e.tags.map(tagChip).join("")}</span>
-    <span class="nt">${e.task && typeof agTask === "function" && agTask(e.task) ? `<span class="zr-task" title="Aufgabe: ${esc(agTask(e.task).title)}">☑</span>` : ""}${esc(e.note)}</span>
+    <span class="nt">${esc(e.note)}${ztEntryChip(e)}</span>
     <span class="du" ${e.running ? `data-run-dur="${e.id}"` : ""}>${hm(d)}</span></div>`;
 }
 
@@ -440,18 +488,55 @@ function ztDayKey() {
   if (ztDay && ztDay >= from && ztDay <= to) return ztDay;
   return t >= from && t <= to ? t : from;
 }
+// v3.7: Tageskalender im Inspector-Stil (Kopf wie Projekte / LV, Raster füllt die Höhe, Summe unten)
+const WDL = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+const MONL = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+function ztDayCalHtml(k) {
+  const es = zdb.entries.filter(e => e.date === k && mine(e));
+  const timed = es.filter(e => e.start != null), today = todayKey();
+  CAL.px = CAL.dayPx;
+  CAL.h0 = Math.min(7, ...timed.map(e => Math.floor(e.start / 60)));
+  CAL.h1 = Math.max(20, ...timed.map(e => Math.ceil((e.end ?? (e.running ? nowMin() : e.start + 60)) / 60)));
+  const n = CAL.h1 - CAL.h0, H = n * CAL.px;
+  const hours = [...Array(n + 1)].map((_, i) => `<div class="hl" style="top:${i * CAL.px}px">${CAL.h0 + i}:00</div>`).join("");
+  let col = `<div class="col" data-day="${k}" style="height:${H}px;--px:${CAL.px}px">`;
+  for (const e of timed) {
+    const end = e.running ? (k === today ? nowMin() : 24 * 60) : (e.end ?? e.start + durOf(e));
+    const top = (e.start / 60 - CAL.h0) * CAL.px, h = Math.max(18, (end - e.start) / 60 * CAL.px - 2);
+    col += `<div class="blk ${e.running ? "run" : ""}" data-zentry="${e.id}" style="top:${top + 1}px;height:${h}px;--pc:${projColor(e.project)}">
+      <b>${esc(projLabel(e.project))}</b>${h > 30 ? `<span class="t">${hm(e.start)}–${e.running ? "läuft" : hm(end)}${e.lp ? " · LP " + e.lp : ""}</span>` : ""}
+      ${h > 58 ? `<div class="ztg">${e.tags.map(tagChip).join("")}</div>` : ""}${h > 90 && e.note ? `<div class="nt">${esc(e.note)}</div>` : ""}
+      ${e.running ? "" : '<i class="rz"></i>'}</div>`;
+  }
+  if (k === today) { const x = nowMin() / 60; if (x >= CAL.h0 && x <= CAL.h1) col += `<div class="now" style="top:${(x - CAL.h0) * CAL.px}px"></div>`; }
+  col += `</div>`;
+  const untimed = es.filter(e => e.start == null);
+  const chips = untimed.length ? `<div class="zt-duntimed">${untimed.map(e => `<div class="chip" data-zentry="${e.id}" style="--pc:${projColor(e.project)}" title="${esc(projLabel(e.project))}">${hm(durOf(e))} ${esc(projLabel(e.project))}</div>`).join("")}</div>` : "";
+  return `${chips}<div class="zcal zcal-day zt-dgrid"><div class="zt-dhours" style="height:${H}px">${hours}</div>${col}</div>`;
+}
 function ztDayPanelHtml() {
   const k = ztDayKey(), d = keyDate(k);
-  const lbl = `${WD[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
-  return `<aside class="zt-dayp"><div class="zt-dayh"><button type="button" class="zt-nav" data-ztday="-1" title="Tag zurück"><svg viewBox="0 0 20 20"><path d="M12 5l-5 5 5 5"/></svg></button>
-    <b>${lbl}</b>${k === todayKey() ? '<span class="pill">heute</span>' : ""}<span class="spacer"></span>
-    <button type="button" class="zt-nav" data-ztday="1" title="Tag weiter"><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5"/></svg></button></div>
-    <div class="zt-daycal" id="ztDayCal">${ztCalHtml([k])}</div></aside>`;
+  const es = zdb.entries.filter(e => e.date === k && mine(e)), sum = es.reduce((a, e) => a + durOf(e), 0);
+  const nav = (s, t, p) => `<button type="button" class="zt-nav" data-ztday="${s}" title="${t}"><svg viewBox="0 0 20 20"><path d="${p}"/></svg></button>`;
+  return `<aside class="zt-dayp"><div class="zt-dhead">
+      <div class="ins-h"><span>Tageskalender · KW ${isoWeek(k)}</span><span class="zt-dnav">${nav(-1, "Tag zurück", "M12 5l-5 5 5 5")}${nav(1, "Tag weiter", "M8 5l5 5-5 5")}</span></div>
+      <div class="zt-ddate">${WDL[d.getUTCDay()]}, ${d.getUTCDate()}. ${MONL[d.getUTCMonth()]}${k === todayKey() ? '<span class="pill">heute</span>' : ""}</div>
+      <div class="muted">${es.length ? `${es.length} ${es.length === 1 ? "Eintrag" : "Einträge"}` : "Keine Einträge"}</div></div>
+    <div class="zt-daycal" id="ztDayCal">${ztDayCalHtml(k)}</div>
+    <div class="ins-total"><span>Summe Tag</span><b>${hm(sum)} h</b></div></aside>`;
 }
 function ztScrollDay() {
   const el = $("ztDayCal"); if (!el) return;
   const first = Math.min(8, ...zdb.entries.filter(e => e.date === ztDayKey() && e.start != null).map(e => Math.floor(e.start / 60)));
   el.scrollTop = Math.max(0, (first - CAL.h0) * CAL.px - 10);
+}
+// Stundenhöhe so wählen, dass das Raster die Spalte bis zur Summenzeile füllt (mind. 40 px)
+function ztFitDay() {
+  const el = $("ztDayCal"); if (!el || !el.clientHeight) return false;
+  const n = CAL.h1 - CAL.h0, rest = [...el.children].reduce((a, c) => a + c.offsetHeight, 0) - CAL.px * n;
+  const px = Math.max(40, Math.floor((el.clientHeight - rest - 2) / n));
+  if (px === CAL.dayPx) return false;
+  CAL.dayPx = px; return true;
 }
 function ztDayNav(step) {
   ztDay = addDays(ztDayKey(), step);
@@ -467,11 +552,17 @@ function ztDayside(on) {
   on = !!on && ztReady();
   el.hidden = !on;
   app.classList.toggle("dayview", on);
-  app.classList.toggle("wide", !on && ["time", "mengen", "tasks"].includes(view));
+  app.classList.toggle("wide", !on && ["time", "mengen", "tasks", "notes", "plan"].includes(view));
   if (!on) { el.innerHTML = ""; return; }
   el.innerHTML = ztDayPanelHtml();
+  if (ztFitDay()) el.innerHTML = ztDayPanelHtml();
   ztScrollDay();
 }
+let ztFitT = null;
+window.addEventListener("resize", () => {
+  clearTimeout(ztFitT);
+  ztFitT = setTimeout(() => { if (!$("dayside")?.hidden && $("ztDayCal") && ztFitDay()) { $("dayside").innerHTML = ztDayPanelHtml(); ztScrollDay(); } }, 120);
+});
 function ztListMainHtml() {
   const list = ztWeekEntries();
   const days = [...new Set(list.map(e => e.date))].sort().reverse();
@@ -543,9 +634,10 @@ function ztTagMenu(anchor, selected, onChange) {
 }
 
 // ---------- Kalender ----------
-const CAL = { h0: 7, h1: 20, px: 44 };
+const CAL = { h0: 7, h1: 20, px: 44, dayPx: 44 };   // dayPx: Stundenhöhe im Tageskalender (v3.7, an die Höhe angepasst)
 function ztCalHtml(dayList = null) {
   const s = weekStart(ztAnchor), days = dayList || [...Array(7)].map((_, i) => addDays(s, i));
+  CAL.px = 44;
   const es = zdb.entries.filter(e => e.date >= days[0] && e.date <= days[days.length - 1] && mine(e));
   const timed = es.filter(e => e.start != null);
   CAL.h0 = Math.min(7, ...timed.map(e => Math.floor(e.start / 60)));
@@ -742,7 +834,8 @@ function ztDrawDialogTask(pid) {
   wrap.hidden = !zdb.hasTask || typeof agdb === "undefined";
   if (wrap.hidden) return;
   const list = agdb.tasks.filter(t => t.id === ztEdit.task || (!agDone(t) && (!pid || t.project === pid)));
-  $("zdTask").innerHTML = `<option value="">keine</option>` + list.map(t => `<option value="${t.id}" ${t.id === ztEdit.task ? "selected" : ""}>${esc(t.title)}${agDone(t) ? " (erledigt)" : ""}</option>`).join("");
+  const kind = t => agIsTask(t) ? "Aufgabe" : agInPlan(t) ? "Plan" : "Notiz";
+  $("zdTask").innerHTML = `<option value="">kein Eintrag</option>` + list.map(t => `<option value="${t.id}" ${t.id === ztEdit.task ? "selected" : ""}>${esc(t.title)} · ${kind(t)}${agDone(t) ? " (erledigt)" : ""}</option>`).join("");
 }
 function ztDrawDialogLp() {
   $("zdLp").innerHTML = LPH.slice(1).map((n, i) => `<button type="button" data-lp="${i + 1}" class="${ztEdit.lp === i + 1 ? "on" : ""}" title="${n}">${i + 1}</button>`).join("");
@@ -1063,6 +1156,8 @@ function ztBind() {
     if (t.closest("#zqTimer")) return ztStartTimer();
     const pick = t.closest("[data-zqtask]");
     if (pick) { e.preventDefault(); return ztAcPick(Number(pick.dataset.zqtask)); }
+    if (t.closest("[data-zqnew]")) { e.preventDefault(); return ztAcNew(); }
+    if (t.closest("[data-zqnone]")) { $("zqAc").hidden = true; return $("zqTime")?.focus(); }
     if (t.closest("#zqTaskX")) { ztReadQuick(); ztQuick.task = null; ztQuick.closeTask = false; return ztRender(); }
     if (t.closest("#zqTagBtn")) { ztReadQuick(); return ztTagMenu(t.closest("#zqTagBtn"), ztQuick.tags, () => ztRender()); }
     const qt = t.closest("[data-qtag]");

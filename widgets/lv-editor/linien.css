@@ -114,14 +114,8 @@ input[type=text], input[type=search], select, textarea { border-radius: 3px; }
 /* ---------- Zeiterfassung: Tageskalender rechts ---------- */
 .zt-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
 .zt-dayp { position: sticky; top: 0; display: flex; flex-direction: column; height: calc(100vh - 56px - 40px); border: 1px solid var(--line); background: var(--surface); }
-.zt-dayh { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); }
-.zt-dayh b { font-weight: 600; }
-.zt-dayh .pill { font-size: 10px; background: var(--accent-soft); color: var(--accent); padding: 1px 6px; text-transform: uppercase; letter-spacing: .04em; }
-.zt-dayh .zt-nav { width: 28px; height: 28px; border-radius: 3px; }
 .zt-daycal { flex: 1; min-height: 0; overflow: auto; }
 .zcal.zcal-day { grid-template-columns: 44px minmax(0, 1fr); border: 0; }
-.zcal-day .ch { top: 0; min-height: 0; padding: 4px 8px; }
-.zcal-day .ch small, .zcal-day .ch b { display: none; }
 @media (max-width: 1100px) { .zt-split { grid-template-columns: minmax(0, 1fr); } .zt-dayp { display: none; } }
 
 /* ---------- Aufgaben: Liste wie die Zeiterfassung ---------- */
@@ -200,8 +194,6 @@ body.ag-dragging, body.ag-dragging * { cursor: grabbing !important; user-select:
 .dayside { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--line); }
 .dayside[hidden] { display: none; }
 .dayside .zt-dayp { position: static; flex: 1; height: auto; min-height: 0; border: 0; }
-.dayside .zt-dayh { height: 56px; box-sizing: border-box; padding: 0 14px; border-bottom: 1px solid var(--line); }
-.dayside .zt-dayh b { font-size: 15px; }
 @media (max-width: 1100px) {
   .app.dayview { grid-template-columns: 56px minmax(0, 1fr); }
   .dayside { display: none !important; }
@@ -219,3 +211,24 @@ body.ag-dragging, body.ag-dragging * { cursor: grabbing !important; user-select:
 .qty-grid .f:focus-within { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
 .qty-grid .q-gp { background: var(--hover, #f6f7f7); }
 .qty-grid .q-gp .out { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* v3.7: Tageskalender im Inspector-Stil – Kopf wie Projekte / LV, Raster bis unten, Summe als Abschluss */
+.zt-dhead { flex: none; padding: 18px 22px 12px; }
+.zt-dhead .ins-h { margin-bottom: 4px; }
+.zt-dnav { display: flex; gap: 4px; }
+.zt-dnav .zt-nav { width: 26px; height: 26px; border-radius: 3px; }
+.zt-ddate { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.zt-ddate .pill { font-size: 10px; font-weight: 500; background: var(--accent-soft); color: var(--accent); padding: 1px 6px; text-transform: uppercase; letter-spacing: .04em; }
+.dayside .zt-daycal { border-top: 1px solid var(--line); }
+.dayside .ins-total { flex: none; }
+.zt-duntimed { display: grid; gap: 4px; padding: 10px 22px 0 74px; }
+.zt-duntimed .chip { font-size: 11px; border-left: 3px solid var(--pc); background: color-mix(in srgb, var(--pc) 10%, #fff); padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.zcal.zt-dgrid { grid-template-columns: 52px minmax(0, 1fr); padding: 10px 22px 10px 0; background: transparent; }
+.zt-dhours { position: relative; }
+.zt-dhours .hl { position: absolute; left: 0; right: 0; transform: translateY(-50%); padding-right: 14px; text-align: right;
+  font: 11px var(--font); font-variant-numeric: tabular-nums; color: var(--muted); }
+.zt-dhours .hl::after { content: ""; position: absolute; right: 0; top: 50%; width: 6px; border-top: 1px solid var(--line); }
+.zcal.zt-dgrid .col { border-left: 0; border-bottom: 1px solid var(--line-2); background-color: transparent;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(#f1f2f4 1px, transparent 1px);
+  background-size: 100% var(--px), 100% var(--px); background-position: 0 0, 0 calc(var(--px) / 2); }
+.zcal.zt-dgrid .blk { left: 6px; right: 0; }

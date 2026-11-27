@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "3.5";
+const VERSION = "4.0";
 
 const T = {
   projects: "Projekte",
@@ -853,6 +853,8 @@ function renderAll() {
   if (view === "time" && !ztIsBusy()) ztRender();
   if (view === "mengen" && !mgIsBusy()) mgRender();
   if (view === "tasks" && !agIsBusy()) agRender();
+  if (view === "notes" && !agIsBusy()) ntRender();
+  if (view === "plan" && !agIsBusy() && !plDrag) plRender();
 }
 
 // Variablenliste nicht neu zeichnen, während darin getippt wird
@@ -1159,9 +1161,11 @@ function setView(v) {
   $("timeView").hidden = v !== "time";
   $("mengenView").hidden = v !== "mengen";
   $("tasksView").hidden = v !== "tasks";
-  const full = ["projects", "time", "mengen", "tasks"].includes(v);
+  $("notesView").hidden = v !== "notes";
+  $("planView").hidden = v !== "plan";
+  const full = ["projects", "time", "mengen", "tasks", "notes", "plan"].includes(v);
   document.querySelector(".mid").classList.toggle("projview", full);
-  $("app").classList.toggle("wide", v === "time" || v === "mengen" || v === "tasks");
+  $("app").classList.toggle("wide", ["time", "mengen", "tasks", "notes", "plan"].includes(v));
   if (v !== "time" && v !== "tasks" && typeof ztDayside === "function") ztDayside(false);
   document.querySelector(".scroll").hidden = v === "texts" || full;
   $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
@@ -1173,6 +1177,8 @@ function setView(v) {
   if (v === "time") ztRender();
   if (v === "mengen") mgRender();
   if (v === "tasks") agRender();
+  if (v === "notes") ntRender();
+  if (v === "plan") plRender();
   if (!full) renderHeader();
 }
 
