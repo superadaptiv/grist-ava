@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LV-Editor</title>
-  <link rel="stylesheet" href="style.css?v=3.4.4">
-  <link rel="stylesheet" href="zeit.css?v=3.4.4">
-  <link rel="stylesheet" href="mengen.css?v=3.4.4">
-  <link rel="stylesheet" href="aufgaben.css?v=3.4.4">
-  <link rel="stylesheet" href="linien.css?v=3.4.4">
+  <link rel="stylesheet" href="style.css?v=3.5">
+  <link rel="stylesheet" href="zeit.css?v=3.5">
+  <link rel="stylesheet" href="mengen.css?v=3.5">
+  <link rel="stylesheet" href="aufgaben.css?v=3.5">
+  <link rel="stylesheet" href="linien.css?v=3.5">
   <!-- Grist Plugin-API. Bei self-hosted Grist alternativ: https://<dein-grist>/grist-plugin-api.js -->
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <script>
@@ -206,11 +206,11 @@
           <input type="text" id="fKurztext" class="big" placeholder="Kurzbeschreibung der Leistung"></label>
         <label class="f"><span>Langtext</span>
           <textarea id="fLangtext" rows="4" placeholder="Ausführliche Leistungsbeschreibung"></textarea></label>
-        <div class="grid-2">
-          <label class="f"><span id="fMengeLbl">Menge</span><input type="text" id="fMenge" class="num" autocomplete="off"></label>
-          <label class="f"><span>Einheit</span><input type="text" id="fEinheit" list="unitList"><datalist id="unitList"></datalist></label>
-          <label class="f"><span>Einheitspreis €</span><input type="text" inputmode="decimal" id="fEinheitspreis" class="num"></label>
-          <div class="f"><span>Gesamtbetrag</span><output id="fGesamt" class="out">0,00 €</output></div>
+        <div class="qty-grid">
+          <label class="f q-menge"><span id="fMengeLbl">Menge</span><input type="text" id="fMenge" class="num" autocomplete="off"></label>
+          <label class="f q-einh"><span>Einheit</span><input type="text" id="fEinheit" list="unitList"><datalist id="unitList"></datalist></label>
+          <label class="f q-ep"><span>EP €</span><input type="text" inputmode="decimal" id="fEinheitspreis" class="num"></label>
+          <div class="f q-gp"><span>GP €</span><output id="fGesamt" class="out">0,00 €</output></div>
         </div>
         <div class="mg-box" id="mgBox"></div>
         <div class="f"><span>Positionsart</span><div class="seg" id="typeSeg"></div></div>
@@ -228,6 +228,8 @@
     </div>
     <div class="ins-total"><span id="insTotalLabel">LV netto</span><b id="lvNet">0,00 €</b></div>
   </aside>
+  <!-- ===== Tageskalender rechts (Zeit / Aufgaben) ===== -->
+  <aside class="dayside" id="dayside" hidden></aside>
 </div>
 <div id="globalMessage" class="toast" hidden></div>
 
@@ -404,9 +406,9 @@
   </form>
 </dialog>
 
-<script src="app.js?v=3.4.4"></script>
-<script src="zeit.js?v=3.4.4"></script>
-<script src="mengen.js?v=3.4.4"></script>
-<script src="aufgaben.js?v=3.4.4"></script>
+<script src="app.js?v=3.5"></script>
+<script src="zeit.js?v=3.5"></script>
+<script src="mengen.js?v=3.5"></script>
+<script src="aufgaben.js?v=3.5"></script>
 </body>
 </html>

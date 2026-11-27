@@ -290,7 +290,7 @@ function mgDrawBox() {
   m.readOnly = mode !== "plain";
   m.classList.toggle("mg-calc", mode !== "plain");
   m.title = mode === "formel" ? "Menge aus Formel – bearbeiten unten" : mode === "ansatz" ? "Menge aus Mengenansatz – bearbeiten unten" : "Zahl eingeben oder mit = eine Formel beginnen";
-  $("fMengeLbl").innerHTML = mode === "plain" ? "Menge" : `Menge <span class="mg-lock">ƒ ${mode === "formel" ? "Formel" : "Mengenansatz"}</span>`;
+  $("fMengeLbl").innerHTML = mode === "plain" ? "Menge" : `Menge <span class="mg-lock" title="${mode === "formel" ? "aus Formel" : "aus Mengenansatz"}">ƒ</span>`;
   if (!mgReady()) {
     box.innerHTML = `<div class="mg-links"><button type="button" class="link" data-mg="setup">ƒ Formeln und Variablen einrichten</button></div>`;
     return;

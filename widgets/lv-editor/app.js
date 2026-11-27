@@ -4,7 +4,7 @@
 // ======================================================
 "use strict";
 
-const VERSION = "3.4.4";
+const VERSION = "3.5";
 
 const T = {
   projects: "Projekte",
@@ -1073,9 +1073,9 @@ function renderSummary() {
 function fillForm(p) {
   $("fKurztext").value = p.Kurztext ?? "";
   $("fLangtext").value = p.Langtext ?? "";
-  $("fMenge").value = fmtInput(p.Menge, 3);
+  $("fMenge").value = num(p.Menge) === 0 ? "" : num(p.Menge).toLocaleString("de-DE", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   $("fEinheit").value = p.Einheit ?? "";
-  $("fEinheitspreis").value = fmtInput(p.Einheitspreis, 2);
+  $("fEinheitspreis").value = num(p.Einheitspreis) === 0 ? "" : num(p.Einheitspreis).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   $("fAktiv").checked = isActive(p.Aktiv);
   const seg = $("typeSeg");
   const current = p.Positionstyp || choices.Positionstyp[0] || "Normal";
@@ -1111,8 +1111,8 @@ function formValues() {
 function updateFormTotal() {
   const v = formValues();
   $("fGesamt").textContent = typeKey(v) === "normal"
-    ? fmtMoney(round2(v.Menge * v.Einheitspreis)) + " €"
-    : "nur Einheitspreis";
+    ? fmtMoney(round2(v.Menge * v.Einheitspreis))
+    : "nur EP";
 }
 
 // ------------------------------------------------------
@@ -1151,6 +1151,7 @@ function setView(v) {
   view = v;
   document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === v));
   $("lvMainButton")?.classList.toggle("on", ["edit", "mengen", "texts", "document"].includes(v));
+  document.querySelector(".rail")?.classList.toggle("lv-off", !["edit", "mengen", "texts", "document"].includes(v));   // Unterpunkte nur im LV
   $("list").hidden = v !== "edit";
   $("documentView").hidden = v !== "document";
   $("textsView").hidden = v !== "texts";
@@ -1161,6 +1162,7 @@ function setView(v) {
   const full = ["projects", "time", "mengen", "tasks"].includes(v);
   document.querySelector(".mid").classList.toggle("projview", full);
   $("app").classList.toggle("wide", v === "time" || v === "mengen" || v === "tasks");
+  if (v !== "time" && v !== "tasks" && typeof ztDayside === "function") ztDayside(false);
   document.querySelector(".scroll").hidden = v === "texts" || full;
   $("search").placeholder = v === "texts" ? "Texte durchsuchen …" : "Suchen: OZ, Kurztext, Langtext …";
   renderInspector();

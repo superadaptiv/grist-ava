@@ -278,7 +278,7 @@ async function agStartTimer(id) {
 let agRowDrag = null, agRowDragJustDropped = false;
 function agRowDragStart(ev) {
   if (ev.button !== 0 || ev.target.closest("button, input, select, textarea, a")) return;
-  if (!document.querySelector("#agBody .zt-daycal")) return;
+  if (!document.querySelector("#dayside .zt-daycal")) return;
   const t = agTask(Number(ev.target.closest(".ag-row").dataset.agid));
   if (!t || agDone(t)) return;
   agRowDrag = { t, x0: ev.clientX, y0: ev.clientY, on: false, float: null, ghost: null, col: null, start: null };
@@ -359,14 +359,13 @@ function agRender() {
   $("agProject").innerHTML = projectOptions(Number(agProject) || null, { all: true });
   agRenderTimer();
   const body = $("agBody");
-  if (!ready) { body.innerHTML = '<div class="zt-empty">Noch nicht eingerichtet.</div>'; $("agDetail").hidden = true; $("agMain").classList.remove("has-detail"); return; }
+  if (!ready) { if (typeof ztDayside === "function") ztDayside(false); body.innerHTML = '<div class="zt-empty">Noch nicht eingerichtet.</div>'; $("agDetail").hidden = true; $("agMain").classList.remove("has-detail"); return; }
   const keepQuick = $("agQuick")?.value || "";
   const focusQuick = document.activeElement?.id === "agQuick";
   const scroll = body.scrollTop;
-  const withDay = agMode !== "board" && typeof ztReady === "function" && ztReady();
-  body.innerHTML = agMode === "board" ? agBoardHtml()
-    : withDay ? `<div class="zt-split ag-split"><div class="zt-lcol">${agListHtml()}</div>${ztDayPanelHtml()}</div>` : agListHtml();
-  if (withDay) ztScrollDay();
+  const withDay = agMode !== "board" && !agSel && typeof ztReady === "function" && ztReady();
+  body.innerHTML = agMode === "board" ? agBoardHtml() : `<div class="ag-split">${agListHtml()}</div>`;
+  ztDayside(withDay);
   if ($("agQuick")) { $("agQuick").value = keepQuick; agDrawParse(); if (focusQuick) $("agQuick").focus(); }
   body.scrollTop = scroll;
   if (agSel && !agTask(agSel)) agSel = null;

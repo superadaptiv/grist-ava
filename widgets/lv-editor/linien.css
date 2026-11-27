@@ -191,3 +191,31 @@ body.ag-dragging, body.ag-dragging * { cursor: grabbing !important; user-select:
 .ag-row.dragsrc { opacity: .45; }
 .ag-dragfloat { position: fixed; z-index: 1000; pointer-events: none; display: flex; align-items: center; gap: 6px; max-width: 260px; padding: 6px 10px; background: var(--surface, #fff); border: 1px solid var(--accent); box-shadow: 0 6px 18px rgba(0,0,0,.12); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .zt-daycal .blk.ghost[style*="--pc"] { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); }
+
+/* v3.4.5: LV-Unterpunkte nur, wenn ein LV-Bereich offen ist */
+.rail.lv-off .ri.sub, .rail.lv-off .rsep, .rail.lv-off .menu-wrap { display: none; }
+
+/* v3.5: Tageskalender als eigene rechte Spalte, bis oben durchgehend (wie Inspector) */
+.app.dayview .inspector { display: none !important; }
+.dayside { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--line); }
+.dayside[hidden] { display: none; }
+.dayside .zt-dayp { position: static; flex: 1; height: auto; min-height: 0; border: 0; }
+.dayside .zt-dayh { height: 56px; box-sizing: border-box; padding: 0 14px; border-bottom: 1px solid var(--line); }
+.dayside .zt-dayh b { font-size: 15px; }
+@media (max-width: 1100px) {
+  .app.dayview { grid-template-columns: 56px minmax(0, 1fr); }
+  .dayside { display: none !important; }
+}
+@media (max-width: 900px) { .app.dayview { grid-template-columns: 48px minmax(0, 1fr); } }
+
+/* v3.5: Menge / Einheit / EP / GP im Inspector als klare Feldreihe */
+.qty-grid { display: grid; grid-template-columns: 1.15fr .8fr 1.15fr 1.3fr; margin: 4px 0 16px; border: 1px solid var(--line); }
+.qty-grid .f { margin: 0; padding: 7px 10px 8px; min-width: 0; }
+.qty-grid .f + .f { border-left: 1px solid var(--line); }
+.qty-grid .f > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qty-grid .mg-lock { text-transform: none; letter-spacing: 0; }
+.qty-grid .f input, .qty-grid .f .out { border: 0; padding: 0; height: 24px; line-height: 24px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.qty-grid .q-menge > span, .qty-grid .q-ep > span, .qty-grid .q-gp > span { text-align: right; }
+.qty-grid .f:focus-within { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+.qty-grid .q-gp { background: var(--hover, #f6f7f7); }
+.qty-grid .q-gp .out { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

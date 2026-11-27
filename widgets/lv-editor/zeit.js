@@ -200,13 +200,13 @@ function ztRender() {
   ztRenderNav();
   ztRenderTimer();
   const body = $("ztBody");
-  if (!ready) { body.innerHTML = '<div class="zt-empty">Noch nicht eingerichtet.</div>'; return; }
+  if (!ready) { body.innerHTML = '<div class="zt-empty">Noch nicht eingerichtet.</div>'; ztDayside(false); return; }
   const keep = ztTab === "list" ? ztSaveQuickFocus() : null;
   if (ztTab === "list") body.innerHTML = ztListHtml();
   else if (ztTab === "cal") body.innerHTML = ztCalHtml();
   else body.innerHTML = ztStatsHtml();
   if (ztTab === "list") ztRestoreQuick(keep);
-  if (ztTab === "list") ztScrollDay();
+  ztDayside(ztTab === "list");
   if (ztTab === "cal") ztScrollCal();
   ztRunTick();
 }
@@ -459,7 +459,18 @@ function ztDayNav(step) {
   if (ztDay < from || ztDay > to) ztAnchor = ztDay;
 }
 function ztListHtml() {
-  return `<div class="zt-split"><div class="zt-lcol">${ztListMainHtml()}</div>${ztDayPanelHtml()}</div>`;
+  return ztListMainHtml();
+}
+// Tageskalender als eigene rechte Spalte, durchgehend bis oben (wie Inspector in Projekte / LV)
+function ztDayside(on) {
+  const el = $("dayside"), app = $("app"); if (!el) return;
+  on = !!on && ztReady();
+  el.hidden = !on;
+  app.classList.toggle("dayview", on);
+  app.classList.toggle("wide", !on && ["time", "mengen", "tasks"].includes(view));
+  if (!on) { el.innerHTML = ""; return; }
+  el.innerHTML = ztDayPanelHtml();
+  ztScrollDay();
 }
 function ztListMainHtml() {
   const list = ztWeekEntries();
@@ -1081,6 +1092,18 @@ function ztBind() {
     ztRender();
   });
   body.addEventListener("pointerdown", e => { if (ztTab === "cal" || e.target.closest(".zt-daycal")) ztCalPointerDown(e); });
+  const side = $("dayside");
+  side.addEventListener("pointerdown", e => { if (e.target.closest(".zt-daycal")) ztCalPointerDown(e); });
+  side.addEventListener("click", e => {
+    const dn = e.target.closest("[data-ztday]");
+    if (dn) { if (view === "time") ztReadQuick(); ztDayNav(Number(dn.dataset.ztday)); return ztRender(); }
+    const ch = e.target.closest(".chip[data-zentry]");
+    if (ch) {
+      const en = zdb.entries.find(x => x.id === Number(ch.dataset.zentry));
+      if (en && en.running) return toast("Der Eintrag läuft noch. Erst den Timer oben stoppen.");
+      if (en) ztOpenDialog({ ...en });
+    }
+  });
   // Vorschläge aus den Aufgaben im Feld „Was wurde gemacht?“
   body.addEventListener("focusin", e => { if (e.target.id === "zqNote") { ztAcSel = 0; ztAcDraw(); } });
   body.addEventListener("input", e => { if (e.target.id === "zqNote") { ztAcSel = 0; ztAcDraw(); } });
