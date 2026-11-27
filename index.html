@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LV-Editor</title>
+  <link rel="stylesheet" href="style.css?v=4.0">
+  <link rel="stylesheet" href="zeit.css?v=4.0">
+  <link rel="stylesheet" href="mengen.css?v=4.0">
+  <link rel="stylesheet" href="aufgaben.css?v=4.0">
+  <link rel="stylesheet" href="eintraege.css?v=4.0">
+  <link rel="stylesheet" href="linien.css?v=4.0">
+  <link rel="stylesheet" href="mobil.css?v=4.0">
+  <!-- Grist Plugin-API. Bei self-hosted Grist alternativ: https://<dein-grist>/grist-plugin-api.js -->
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <script>
+    // Lokale Vorschau ohne Grist: index.html?demo
+    if (new URLSearchParams(location.search).has("demo")) {
+      document.write('<script src="../../dev/mock-grist.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ===== Icon-Leiste ===== -->
+  <nav class="rail">
+    <div class="logo">LV</div>
+    <button type="button" class="ri" data-view="projects" title="Projekte (Übersicht)">
+      <svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1.2"/><rect x="11" y="3" width="6" height="6" rx="1.2"/><rect x="3" y="11" width="6" height="6" rx="1.2"/><rect x="11" y="11" width="6" height="6" rx="1.2"/></svg></button>
+    <button type="button" class="ri" data-view="notes" title="Notizen (alle Einträge)">
+      <svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z M12 2.5v3h3 M7.5 9h5M7.5 12h5M7.5 15h3"/></svg></button>
+    <button type="button" class="ri" data-view="tasks" title="Aufgaben">
+      <svg viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="3.5"/><path d="M6.8 10.2l2.3 2.3 4.2-4.8"/></svg></button>
+    <button type="button" class="ri" data-view="time" title="Zeiterfassung">
+      <svg viewBox="0 0 20 20"><circle cx="10" cy="10.5" r="6.5"/><path d="M10 6.5v4l2.6 1.8M8 2.5h4"/></svg></button>
+    <button type="button" class="ri" data-view="plan" title="Bauzeitenplan">
+      <svg viewBox="0 0 20 20"><path d="M3 3v14M3 6h8M7 10h9M5 14h6"/></svg></button>
+    <button type="button" class="ri" id="lvMainButton" title="Leistungsverzeichnis">
+      <svg viewBox="0 0 20 20"><rect x="4" y="3.5" width="12" height="14" rx="1"/><path d="M7.5 3.5V2h5v1.5"/><path d="M7 8h1M9.5 8H13M7 11h1M9.5 11H13M7 14h1M9.5 14H12"/></svg></button>
+    <span class="rsep"></span>
+    <button type="button" class="ri sub on" data-view="edit" title="Liste bearbeiten">
+      <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h9"/></svg></button>
+    <button type="button" class="ri sub" data-view="mengen" title="Mengen &amp; Variablen">
+      <svg viewBox="0 0 20 20"><path d="M2.5 13.5l11-11 4 4-11 11z M5.5 10.5l1.5 1.5M8 8l2 2M10.5 5.5l1.5 1.5"/></svg></button>
+    <button type="button" class="ri sub" data-view="texts" title="Texte (Vor- und Nachbemerkungen)">
+      <svg viewBox="0 0 20 20"><path d="M4 4h12M10 4v12M7.5 16h5"/></svg></button>
+    <button type="button" class="ri sub" data-view="document" title="Dokumentansicht">
+      <svg viewBox="0 0 20 20"><path d="M5 2.5h7l3 3v12H5z M12 2.5v3h3 M7.5 9h5M7.5 12h5M7.5 15h3"/></svg></button>
+    <div class="menu-wrap">
+      <button type="button" class="ri sub" id="printMenuButton" title="Drucken und Export">
+        <svg viewBox="0 0 20 20"><path d="M6 7V2.5h8V7 M6 14H3.5V7h13v7H14 M6 11.5h8v6H6z"/></svg></button>
+      <div class="menu" id="printMenu" hidden>
+        <div class="menu-sec">Druckstil</div>
+        <div class="seg pstyle"><button type="button" data-pstyle="klassisch">Klassisch</button><button type="button" data-pstyle="modern">Modern</button></div>
+        <hr>
+        <button type="button" data-print="ausschreibung"><b>Ausschreibung</b><small>ohne Preise, mit Bieterfeldern</small></button>
+        <button type="button" data-print="kostenanschlag"><b>Kostenvoranschlag</b><small>mit Kostenansatz (EP/GB)</small></button>
+        <button type="button" data-print="kosten"><b>Kostenschätzung</b><small>kompakt, ohne Langtexte, mit Verteilung</small></button>
+        <button type="button" data-print="kurz"><b>Kurz-LV</b><small>nur Kurztexte, mit Preisen</small></button>
+        <button type="button" data-print="mengen"><b>Mengenermittlung</b><small>Formeln, Rechenzeilen, Variablen</small></button>
+        <hr>
+        <button type="button" data-export="xlsx"><b>Excel / Calc</b><small>.xlsx mit Preisen und Formeln</small></button>
+        <button type="button" data-export="xlsx-bieter"><b>Excel / Calc für Bieter</b><small>.xlsx ohne Preise, GB rechnet mit</small></button>
+        <button type="button" data-export="csv"><b>CSV</b><small>Positionsliste, Semikolon</small></button>
+        <hr>
+        <button type="button" id="exportTypstButton"><b>Typst-Datei</b><small>für eigenes Layout</small></button>
+      </div>
+    </div>
+    <span class="rail-sp"></span>
+    <button type="button" class="ri" id="refreshButton" title="Neu laden">
+      <svg viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-1.8-4.3 M16 3v3.5h-3.5"/></svg></button>
+    <button type="button" class="ri" id="settingsButton" title="Einstellungen">
+      <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8"/></svg></button>
+  </nav>
+
+  <!-- ===== Mitte ===== -->
+  <section class="mid">
+    <header class="bar">
+      <h1 class="ph">Leistungsverzeichnisse</h1>
+      <div class="ctx">
+        <select id="lvSelect" class="sel-lv" title="Leistungsverzeichnis"></select>
+        <span class="sep">·</span>
+        <select id="projectSelect" class="sel-pr" title="Projekt"></select>
+        <span id="lvStatus" class="status" hidden></span>
+        <button type="button" class="link" id="newLvButton" title="Neues Projekt oder LV anlegen">+ Neu</button>
+      </div>
+      <label class="cmd">
+        <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>
+        <input type="search" id="search" placeholder="Suchen: OZ, Kurztext, Langtext …" autocomplete="off">
+        <kbd>⌘K</kbd>
+      </label>
+      <span id="saveStatus" class="save-status">Bereit</span>
+      <button type="button" class="btn btn-primary" id="addPositionButton">+ Position</button>
+    </header>
+
+    <div id="schemaBanner" class="banner" hidden>
+      <div><b id="schemaBannerTitle">Datenmodell erweitern</b> <span id="schemaBannerText"></span></div>
+      <button type="button" class="btn btn-primary" id="schemaButton">Jetzt anlegen</button>
+    </div>
+
+    <div class="scroll">
+      <div class="list" id="list"></div>
+      <div class="paper" id="documentView" hidden></div>
+    </div>
+
+    <div class="projects" id="projectsView" hidden>
+      <header class="bar">
+        <h1 class="ph">Projekte</h1><span class="muted" id="projCount"></span>
+        <span class="spacer"></span>
+        <label class="cmd pcmd">
+          <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>
+          <input type="search" id="projSearch" placeholder="Projekt, Bauherr, Ort …" autocomplete="off">
+        </label>
+        <button type="button" class="btn btn-primary" id="projNew">+ Projekt</button>
+      </header>
+      <div class="pscroll">
+        <div class="kpis" id="projKpis"></div>
+        <div class="seg pfilter" id="projFilter"></div>
+        <div id="projList"></div>
+      </div>
+    </div>
+
+    <div class="mg" id="mengenView" hidden>
+      <header class="bar">
+        <h1 class="ph">Mengen &amp; Variablen</h1>
+        <select id="mgProject" class="sel-pr" title="Projekt"></select>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-ghost" id="mgRecalc" hidden>Mengen aktualisieren</button>
+        <button type="button" class="btn btn-primary" id="mgAdd">+ Variable</button>
+      </header>
+      <div id="mgBanner" class="banner" hidden>
+        <div><b>Mengen &amp; Variablen einrichten</b> <span id="mgBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="mgInstall">Jetzt einrichten</button>
+      </div>
+      <div class="mg-scroll" id="mgBody"></div>
+    </div>
+
+    <div class="zt" id="timeView" hidden>
+      <header class="bar zt-bar">
+        <h1 class="ph">Zeiterfassung</h1>
+        <div class="zt-wk">
+          <button type="button" class="zt-nav" id="ztPrev" title="Zurück"><svg viewBox="0 0 20 20"><path d="M12 5l-5 5 5 5"/></svg></button>
+          <b id="ztWeekLbl"></b><small id="ztWeekRange"></small>
+          <button type="button" class="zt-nav" id="ztNext" title="Weiter"><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5"/></svg></button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="ztToday">Heute</button>
+        <div class="seg zt-tabs" id="ztTabs">
+          <button type="button" data-zt="list">Liste</button>
+          <button type="button" data-zt="cal">Kalender</button>
+          <button type="button" data-zt="stats">Auswertung</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="zt-timer" id="ztTimer" hidden></div>
+        <button type="button" class="zt-nav zt-cfg" id="ztSetup" title="Name, Soll-Stunden und Tags">
+          <svg viewBox="0 0 20 20"><path d="M3 6h9M15 6h2M3 14h2M8 14h9"/><circle cx="13.5" cy="6" r="1.6"/><circle cx="6.5" cy="14" r="1.6"/></svg></button>
+      </header>
+      <div id="ztBanner" class="banner" hidden>
+        <div><b>Zeiterfassung einrichten</b> <span id="ztBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="ztInstall">Jetzt einrichten</button>
+      </div>
+      <div class="zt-scroll" id="ztBody"></div>
+    </div>
+
+    <div class="ag" id="tasksView" hidden>
+      <header class="bar ag-bar">
+        <h1 class="ph">Aufgaben</h1>
+        <select id="agProject" class="sel-pr" title="Projekt"></select>
+        <span class="spacer"></span>
+        <div class="zt-timer" id="agTimer" hidden></div>
+        <div class="seg ag-seg" id="agMode"><button type="button" data-agm="list">Liste</button><button type="button" data-agm="board">Board</button></div>
+        <div class="seg ag-seg" id="agWho" title="Meine = mir zugewiesen oder niemandem"><button type="button" data-agw="all">Alle</button><button type="button" data-agw="mine">Meine</button></div>
+      </header>
+      <div id="agBanner" class="banner" hidden>
+        <div><b>Aufgaben einrichten</b> <span id="agBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="agInstall">Jetzt einrichten</button>
+      </div>
+      <div class="ag-body" id="agMain">
+        <div class="ag-scroll" id="agBody"></div>
+        <aside class="ag-detail" id="agDetail" hidden></aside>
+      </div>
+    </div>
+
+    <div class="ag nt" id="notesView" hidden>
+      <header class="bar ag-bar">
+        <h1 class="ph">Notizen</h1>
+        <select id="ntProject" class="sel-pr" title="Projekt"></select>
+        <div class="seg ag-seg" id="ntMode"><button type="button" data-ntm="all">Alle Einträge</button><button type="button" data-ntm="notes">Nur Notizen</button></div>
+        <span class="spacer"></span>
+        <label class="cmd pcmd nt-search">
+          <svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="M13 13l4 4"/></svg>
+          <input type="search" id="ntSearch" placeholder="Einträge durchsuchen …" autocomplete="off">
+        </label>
+      </header>
+      <div id="ntBanner" class="banner" hidden>
+        <div><b>Notizen einrichten</b> <span id="ntBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="ntInstall">Jetzt einrichten</button>
+      </div>
+      <div class="ag-body" id="ntMain">
+        <div class="ag-scroll" id="ntBody"></div>
+      </div>
+    </div>
+
+    <div class="ag pl" id="planView" hidden>
+      <header class="bar ag-bar">
+        <h1 class="ph">Bauzeitenplan</h1>
+        <select id="plProject" class="sel-pr" title="Projekt"></select>
+        <span class="spacer"></span>
+        <label class="pl-duesw" title="Aufgaben mit Fälligkeit, aber ohne Zeitraum, als kurze Balken zeigen"><input type="checkbox" id="plDue"> Fällige Aufgaben</label>
+        <div class="seg ag-seg" id="plScale"><button type="button" data-pls="week">Woche</button><button type="button" data-pls="month">Monat</button><button type="button" data-pls="quarter">Quartal</button></div>
+        <button type="button" class="btn btn-ghost" id="plNew">+ Eintrag</button>
+      </header>
+      <div id="plBanner" class="banner" hidden>
+        <div><b>Bauzeitenplan einrichten</b> <span id="plBannerText"></span></div>
+        <button type="button" class="btn btn-primary" id="plInstall">Jetzt einrichten</button>
+      </div>
+      <div class="ag-body" id="plMain">
+        <div class="pl-scroll" id="plBody"></div>
+      </div>
+    </div>
+
+    <div class="texts" id="textsView" hidden>
+      <div class="slots" id="textSlots"></div>
+      <div class="ted" id="textEditor">
+        <div class="crumb" id="txCrumb"></div>
+        <div class="edh">
+          <h1 id="txTitle">Vorbemerkung</h1>
+          <label class="tg"><span>Im LV anzeigen</span><input type="checkbox" id="txOn" class="sw"></label>
+        </div>
+        <div class="seg seg-inline" id="txPart">
+          <button type="button" data-part="Vorbemerkung">Vorbemerkung</button>
+          <button type="button" data-part="Nachbemerkung">Nachbemerkung</button>
+        </div>
+        <textarea id="txText" spellcheck="true"></textarea>
+        <div class="tfoot"><span id="txStatus"></span><span id="txCount"></span></div>
+        <p class="muted" id="txHint"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Inspector ===== -->
+  <aside class="inspector" id="inspector">
+    <div class="ins-body">
+      <form id="posPanel" autocomplete="off" hidden>
+        <div class="ins-h"><span>Position</span><button type="button" class="x" id="closeInspector" title="Schließen (Esc)">✕</button></div>
+        <div class="ins-oz" id="inspectorOz">–</div>
+        <div class="muted ins-path" id="inspectorPath"></div>
+
+        <label class="f"><span>Kurztext</span>
+          <input type="text" id="fKurztext" class="big" placeholder="Kurzbeschreibung der Leistung"></label>
+        <label class="f"><span>Langtext</span>
+          <textarea id="fLangtext" rows="4" placeholder="Ausführliche Leistungsbeschreibung"></textarea></label>
+        <div class="qty-grid">
+          <label class="f q-menge"><span id="fMengeLbl">Menge</span><input type="text" id="fMenge" class="num" autocomplete="off"></label>
+          <label class="f q-einh"><span>Einheit</span><input type="text" id="fEinheit" list="unitList"><datalist id="unitList"></datalist></label>
+          <label class="f q-ep"><span>EP €</span><input type="text" inputmode="decimal" id="fEinheitspreis" class="num"></label>
+          <div class="f q-gp"><span>GP €</span><output id="fGesamt" class="out">0,00 €</output></div>
+        </div>
+        <div class="mg-box" id="mgBox"></div>
+        <div class="f"><span>Positionsart</span><div class="seg" id="typeSeg"></div></div>
+        <label class="switch"><input type="checkbox" id="fAktiv"><span>Aktiv (inaktive Positionen fehlen im Druck)</span></label>
+        <div class="ins-foot">
+          <span class="muted" id="dirtyIndicator"></span>
+          <span class="spacer"></span>
+          <button type="button" class="link" id="duplicateButton">Duplizieren</button>
+          <button type="button" class="link danger" id="deleteButton">Löschen</button>
+        </div>
+      </form>
+      <div id="summaryPanel"></div>
+      <div id="textPreview" hidden></div>
+      <div id="projectPanel" hidden></div>
+    </div>
+    <div class="ins-total"><span id="insTotalLabel">LV netto</span><b id="lvNet">0,00 €</b></div>
+  </aside>
+  <!-- ===== Tageskalender rechts (Zeit / Aufgaben) ===== -->
+  <aside class="dayside" id="dayside" hidden></aside>
+</div>
+<div id="globalMessage" class="toast" hidden></div>
+
+<!-- ===== Dialog: Titel ===== -->
+<dialog id="titleDialog" class="dialog">
+  <form method="dialog" id="titleForm">
+    <h2 id="titleDialogHeading">Titel</h2>
+    <label class="field"><span>Bezeichnung</span><input type="text" id="tBezeichnung" required></label>
+    <p class="muted">Vor- und Nachbemerkungen zu diesem Titel trägst du im Reiter „Texte“ ein (Symbol T in der linken Leiste).</p>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-danger" id="tDelete">Löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="tCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: Projekt / LV anlegen ===== -->
+<dialog id="quickStartDialog" class="dialog">
+  <form method="dialog" id="quickStartForm">
+    <div class="seg q-mode" id="qMode">
+      <button type="button" data-mode="lv">LV im Projekt</button>
+      <button type="button" data-mode="project">Neues Projekt</button>
+    </div>
+    <h2 id="qHeading">Neues Leistungsverzeichnis</h2>
+    <p class="muted" id="qProjectHint"></p>
+    <input type="checkbox" id="qNewProject" hidden>
+    <div id="qProjectFields">
+      <div class="grid-2">
+        <label class="field"><span>Projektnummer</span><input type="text" id="qProjektnummer" placeholder="z. B. 2601"></label>
+        <label class="field"><span>Projektname</span><input type="text" id="qProjektname" placeholder="z. B. Anbau M52"></label>
+      </div>
+      <label class="field"><span>Bauherr / Auftraggeber</span><input type="text" id="qBauherr"></label>
+      <label class="field"><span>Straße</span><input type="text" id="qStrasse"></label>
+      <div class="grid-2">
+        <label class="field"><span>PLZ</span><input type="text" id="qPLZ"></label>
+        <label class="field"><span>Ort</span><input type="text" id="qOrt"></label>
+      </div>
+      <label class="switch" id="qWithLvWrap"><input type="checkbox" id="qWithLv" checked><span>Gleich ein LV anlegen</span></label>
+    </div>
+    <div id="qLvFields">
+    <div class="grid-2">
+      <label class="field"><span>LV-Nummer</span><input type="text" id="qLvNummer" placeholder="z. B. 02" required></label>
+      <label class="field"><span>Gewerk</span><input type="text" id="qGewerk" placeholder="z. B. Rohbau"></label>
+    </div>
+    <label class="field"><span>LV-Bezeichnung</span><input type="text" id="qLvName" placeholder="z. B. Rohbauarbeiten" required></label>
+    <label class="field"><span>Vorlage</span><select id="qTemplate">
+      <option value="">Leer beginnen</option>
+      <option value="din276">Kostenschätzung nach DIN 276 (Kostengruppen 100–800)</option>
+      <option value="din277">Flächen nach DIN 277 (NUF, TF, VF, KGF, BRI)</option>
+    </select></label>
+    </div>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="qCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary" id="qSubmit">Anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: Projekt bearbeiten ===== -->
+<dialog id="projectDialog" class="dialog">
+  <form method="dialog" id="projectForm">
+    <h2>Projekt bearbeiten</h2>
+    <div class="grid-2">
+      <label class="field"><span>Projektnummer</span><input type="text" id="pj_Projektnummer"></label>
+      <label class="field"><span>Status</span><select id="pj_Projektstatus"></select></label>
+    </div>
+    <label class="field"><span>Projektname</span><input type="text" id="pj_Projektname" required></label>
+    <label class="field"><span>Bauherr / Auftraggeber</span><input type="text" id="pj_Bauherr"></label>
+    <label class="field"><span>Straße</span><input type="text" id="pj_Strasse"></label>
+    <div class="grid-2">
+      <label class="field"><span>PLZ</span><input type="text" id="pj_PLZ"></label>
+      <label class="field"><span>Ort</span><input type="text" id="pj_Ort"></label>
+    </div>
+    <label class="field"><span>Planer / Architekt</span><input type="text" id="pj_Architekt"></label>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="pjCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: LV-Angaben ===== -->
+<dialog id="lvDialog" class="dialog dialog-wide">
+  <form method="dialog" id="lvForm">
+    <h2>LV-Angaben</h2>
+    <div class="grid-3">
+      <label class="field"><span>LV-Nummer</span><input type="text" id="lv_LV_Nummer"></label>
+      <label class="field"><span>Gewerk</span><input type="text" id="lv_Gewerk"></label>
+      <label class="field"><span>Bearbeitungsstand</span><select id="lv_Bearbeitungsstand"></select></label>
+    </div>
+    <label class="field"><span>LV-Bezeichnung</span><input type="text" id="lv_LV_Bezeichnung"></label>
+    <div class="dialog-sec">Deckblatt</div>
+    <div class="grid-2">
+      <label class="field"><span>Vergabeverfahren</span><input type="text" id="lv_Vergabeverfahren"></label>
+      <label class="field"><span>Angebotsabgabe (Datum, Uhrzeit)</span><input type="text" id="lv_Angebotsfrist"></label>
+      <label class="field"><span>Submission</span><input type="text" id="lv_Submission"></label>
+      <label class="field"><span>Zuschlagsfrist</span><input type="text" id="lv_Zuschlagsfrist"></label>
+    </div>
+    <label class="field"><span>Ort der Angebotsabgabe</span><textarea id="lv_Ort_Angebotsabgabe" rows="3"></textarea></label>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="lvCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Dialog: Einstellungen ===== -->
+<dialog id="settingsDialog" class="dialog">
+  <form method="dialog" id="settingsForm">
+    <h2>Einstellungen</h2>
+    <p class="muted">Diese Angaben erscheinen im Druck als Planer-Block. Sie werden in den Widget-Optionen gespeichert.</p>
+    <label class="field"><span>Büro / Planer</span><input type="text" id="sPlaner"></label>
+    <label class="field"><span>Anschrift (mehrzeilig)</span><textarea id="sAnschrift" rows="3"></textarea></label>
+    <label class="field"><span>Ansprechpartner, Telefon, E-Mail (mehrzeilig)</span><textarea id="sKontakt" rows="3"></textarea></label>
+    <div class="field"><span>Logo für den Druck (SVG oder PNG)</span>
+      <div class="logo-row"><div class="logo-prev" id="sLogoPreview"></div>
+        <label class="btn">Datei wählen<input type="file" id="sLogoFile" accept="image/svg+xml,image/png,image/jpeg" hidden></label>
+        <button type="button" class="link danger" id="sLogoRemove">Entfernen</button></div></div>
+    <div class="grid-2">
+      <label class="field"><span>MwSt.-Satz %</span><input type="text" id="sMwst" class="num"></label>
+      <label class="field"><span>Schrittweite Positionen</span><input type="text" id="sStep" class="num"></label>
+    </div>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="sCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ztDialog" class="dialog zt-dialog">
+  <form method="dialog" id="ztForm">
+    <h2 id="zdTitle">Eintrag</h2>
+    <label class="field"><span>Projekt</span><select id="zdProject"></select></label>
+    <div class="grid-2">
+      <label class="field"><span>Datum</span><input type="date" id="zdDate"></label>
+      <label class="field"><span>Zeit (13–14:30) oder Dauer (1,5h)</span><input type="text" id="zdTime" autocomplete="off"></label>
+    </div>
+    <div class="field"><span>Leistungsphase (HOAI)</span><div class="zd-lps" id="zdLp"></div><small class="muted" id="zdLpName"></small></div>
+    <div class="field"><span>Tätigkeit</span><div class="zd-tags" id="zdTags"></div></div>
+    <label class="field"><span>Notiz</span><input type="text" id="zdNote" placeholder="Was wurde gemacht? (optional)"></label>
+    <label class="field" id="zdTaskWrap" hidden><span>Eintrag (Notiz, Aufgabe oder Plan)</span><select id="zdTask"></select></label>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-danger" id="zdDelete">Löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="zdCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ztSetupDialog" class="dialog dialog-wide">
+  <form method="dialog" id="ztSetupForm">
+    <h2>Zeiterfassung</h2>
+    <div class="grid-2">
+      <label class="field"><span>Dein Name (nur auf diesem Gerät)</span><input type="text" id="zsName" placeholder="z. B. Kürzel"></label>
+      <label class="field"><span>Soll-Stunden pro Woche</span><input type="text" id="zsSoll" class="num"></label>
+    </div>
+    <p class="muted">Mit Namen zeigen Liste und Kalender deine Einträge (und solche ohne Namen). Die Auswertung kann nach Person filtern.</p>
+    <div class="dialog-sec">Tags (Tätigkeiten)</div>
+    <div class="zs-tags" id="zsTags"></div>
+    <button type="button" class="link" id="zsAddTag">+ Tag hinzufügen</button>
+    <p class="muted">Tipp: Eine lange Tag-Liste kannst du auch direkt in Grist in die Tabelle „Tags“ einfügen.</p>
+    <div class="dialog-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" id="zsCancel">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js?v=4.0"></script>
+<script src="zeit.js?v=4.0"></script>
+<script src="mengen.js?v=4.0"></script>
+<script src="aufgaben.js?v=4.0"></script>
+<script src="eintraege.js?v=4.0"></script>
+<script src="mobil.js?v=4.0"></script>
+</body>
+</html>

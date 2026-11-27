@@ -1,0 +1,110 @@
+/* ======================================================
+   Mengen & Variablen (ab 2.9)
+   ====================================================== */
+:root { --var: #2563eb; --var-soft: #eef3fe; --var-ink: #1e40af; --var-line: #c7d7fb; }
+
+/* ƒ in der Liste */
+.mgf { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px;
+  background: var(--var-soft); color: var(--var); font: italic 700 10px Georgia, serif; margin-right: 5px; vertical-align: 1px; }
+.mgf.dev { background: var(--warn-bg); color: #b45309; }
+.mgf.err { background: #fdf1ef; color: var(--danger); }
+
+/* Inspektor */
+.f input.mg-calc { color: var(--var-ink); font-weight: 600; cursor: pointer; border-bottom-style: dashed; }
+.mg-lock { display: inline-block; margin-left: 4px; font-size: 10.5px; color: var(--var); background: var(--var-soft); border-radius: 4px; padding: 0 5px; }
+.mg-box { margin: -6px 0 14px; }
+.mg-box:empty { display: none; }
+.mg-links { display: flex; gap: 2px; margin-left: -7px; }
+.mg-links .link { font-size: 12px; }
+.mg-h { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  border-top: 1px solid var(--line); padding-top: 10px; margin-bottom: 6px; }
+.mg-acts { display: flex; gap: 0; text-transform: none; letter-spacing: 0; }
+.mg-acts .link { font-size: 11.5px; padding: 3px 6px; }
+.mg-in { display: flex; align-items: center; gap: 6px; border: 1.5px solid var(--line-2); border-radius: 8px; padding: 0 10px; background: var(--surface); }
+.mg-in:focus-within { border-color: var(--ink); }
+.mg-in .eq { font: 600 13px var(--mono); color: var(--muted); }
+.mg-in input { flex: 1; border: 0; outline: 0; background: none; font: 12.5px var(--mono); padding: 8px 0; min-width: 0; }
+.mg-res { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; font-size: 12px; color: var(--muted); min-height: 20px; }
+.mg-res b { font-size: 14px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.mg-err { color: var(--danger); font-size: 12px; }
+.mg-used { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.mg-used:empty { display: none; }
+.vchip { display: inline-flex; align-items: center; gap: 5px; background: var(--var-soft); color: var(--var-ink); border: 1px solid var(--var-line);
+  border-radius: 5px; padding: 1px 7px; font: 500 12px var(--font); white-space: nowrap; }
+.vchip i { font-style: normal; color: #6b83c8; font-size: 11px; }
+button.vchip:hover { border-color: var(--var); }
+.mg-hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+.mg-hint kbd { font: 10.5px var(--mono); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--ink); background: var(--surface); }
+.mg-dev { margin-top: 8px; background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.45; }
+.mg-dev span { display: block; margin-top: 2px; }
+.mg-dev .link { color: var(--warn-ink); text-decoration: underline; padding: 0; font-size: 12px; }
+
+/* Mengenansatz */
+.mg-ma { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.5px; }
+.mg-ma th { font-weight: 500; color: var(--muted); font-size: 11px; text-align: left; padding: 0 4px 4px; border-bottom: 1px solid var(--line); }
+.mg-ma td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.mg-ma .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mg-ma input { width: 100%; border: 0; outline: 0; background: none; padding: 6px 2px; border-radius: 5px; font-size: 12.5px; }
+.mg-ma input.mg-expr { font: 12px var(--mono); }
+.mg-ma input:focus { background: var(--hover); }
+.mg-ma .x { border: 0; background: none; color: var(--muted); font-size: 11px; padding: 2px; border-radius: 4px; opacity: 0; }
+.mg-ma tr:hover .x, .mg-ma .x:focus { opacity: 1; }
+.mg-ma .x:hover { color: var(--danger); }
+.mg-ma tr.neg td.r { color: var(--danger); }
+.mg-ma tr.chained td.r { color: var(--muted); text-decoration: line-through; }
+.mg-ma tfoot td { border-bottom: 0; }
+.mg-ma tfoot .link { margin-left: -6px; font-size: 12px; }
+.mg-ma tr.sum td { border-top: 1.5px solid var(--ink); font-weight: 600; padding: 6px 4px; }
+
+/* Vorschlagsliste */
+.mg-ac { position: fixed; z-index: 50; width: 290px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .14); padding: 5px; }
+.mg-ac .h { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 4px 8px; }
+.mg-ac .o { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.mg-ac .o.on, .mg-ac .o:hover { background: var(--var-soft); }
+.mg-ac .o small { display: block; color: var(--muted); font: 11px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.mg-ac .o b { font: 500 12px var(--mono); color: #3f3f46; align-self: center; white-space: nowrap; }
+
+/* Bereich Mengen & Variablen */
+.mg { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.mg .bar { gap: 12px; }
+.mg-scroll { overflow: auto; padding: 18px 22px 40px; flex: 1; min-height: 0; }
+.mg-intro { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 0 0 14px; max-width: 820px; }
+.mg-intro code, .mg-none code { font: 12px var(--mono); background: var(--hover); border-radius: 4px; padding: 0 4px; color: var(--ink); }
+.mg-vt, .mg-pt { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 12.5px; }
+.mg-vt th { font-weight: 500; color: var(--muted); font-size: 11px; text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.mg-vt td { padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.mg-vt tr:last-child td, .mg-pt tr:last-child td { border-bottom: 0; }
+.mg-vt .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mg-vt td.res { padding-right: 12px; font-weight: 500; }
+.mg-vt input { width: 100%; border: 1px solid transparent; outline: 0; background: none; padding: 6px 5px; border-radius: 6px; font-size: 12.5px; }
+.mg-vt input:hover { border-color: var(--line); }
+.mg-vt input:focus { border-color: var(--ink); background: var(--surface); }
+.mg-vt input[data-k="name"] { color: var(--var-ink); font-weight: 500; }
+.mg-vt input.mono { font: 12px var(--mono); }
+.mg-vt .uses { display: flex; align-items: center; min-height: 30px; flex-wrap: wrap; gap: 4px; padding: 6px; }
+.mg-use { border: 1px solid var(--line-2); background: var(--surface); border-radius: 5px; padding: 0 6px; font: 11.5px var(--mono); color: #3f3f46; }
+button.mg-use:hover { border-color: var(--ink); }
+.mg-use.v { font-family: var(--font); background: var(--var-soft); border-color: var(--var-line); color: var(--var-ink); }
+.mg-vt .x { border: 0; background: none; color: var(--muted); font-size: 12px; border-radius: 5px; padding: 3px 5px; opacity: .4; }
+.mg-vt tr:hover .x { opacity: 1; }
+.mg-vt .x:hover { color: var(--danger); background: #fdf1ef; }
+.mg-none { padding: 14px 10px !important; }
+.mg-addrow { margin: 6px 0 0 4px; }
+.mg-sec { font-size: 13px; font-weight: 600; margin: 26px 0 8px; display: flex; gap: 8px; align-items: baseline; }
+.mg-pt td { padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mg-pt .mono { font: 12px var(--mono); }
+.mg-pt .fx { color: #3f3f46; }
+.mg-pt .r { text-align: right; font-variant-numeric: tabular-nums; }
+.mg-prow { cursor: pointer; }
+.mg-prow:hover td { background: var(--hover); }
+.mg-st { font-size: 11.5px; border-radius: 5px; padding: 1px 6px; }
+.mg-st.dev { background: var(--warn-bg); color: #b45309; }
+.mg-st.lock { background: var(--hover); color: var(--muted); }
+.mg-st.err { background: #fdf1ef; color: var(--danger); }
+
+@media (min-width: 1201px) and (max-width: 1599px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 430px; } }
+@media (min-width: 1600px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 500px; } }
+@media (min-width: 1920px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 560px; } }
+@media (min-width: 2200px) { .app.ins-wide:not(.wide) { grid-template-columns: 56px minmax(0, 1fr) 640px; } }
+.mg .bar select { border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 6px 8px; font-size: 13px; max-width: 340px; }
